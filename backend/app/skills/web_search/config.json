@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Search the web and return titles (demo).",
   "category": "research",
-  "enabled": false,
+  "enabled": true,
   "parameters": {
     "query": {
       "type": "string",
@@ -17,7 +17,8 @@
       "default": 5
     }
   },
-  "permissions": ["network"],
+  "permissions": [
+    "network"
+  ],
   "timeout": 30
 }
-

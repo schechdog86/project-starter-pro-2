@@ -29,10 +29,17 @@ class DataRetrieval:
         
         try:
             from firecrawl import Firecrawl
-            self.firecrawl = Firecrawl()
-            print("✅ Firecrawl available")
-        except ImportError:
-            print("⚠️  Firecrawl not available (optional)")
+            import os
+            api_key = os.getenv("FIRECRAWL_API_KEY", "")
+            if api_key:
+                self.firecrawl = Firecrawl(api_key=api_key)
+                print("✅ Firecrawl available")
+            else:
+                self.firecrawl = None
+                print("⚠️  Firecrawl API key not set (optional)")
+        except (ImportError, ValueError) as e:
+            self.firecrawl = None
+            print(f"⚠️  Firecrawl not available (optional): {e}")
 
     def scrape(self, query: str, url: str, out_name: str = "scrape.json") -> Dict[str, Any]:
         """

@@ -4,7 +4,7 @@
     "version": "1.0.0",
     "description": "Search the web and return titles (demo).",
     "category": "research",
-    "enabled": false,
+    "enabled": true,
     "parameters": {
       "query": {
         "type": "string",
@@ -18,7 +18,9 @@
         "default": 5
       }
     },
-    "permissions": ["network"],
+    "permissions": [
+      "network"
+    ],
     "timeout": 30
   },
   "memory_search": {
@@ -40,8 +42,14 @@
       }
     },
     "dependencies": [],
-    "frameworks": ["crewai", "autogen", "langchain"],
-    "permissions": ["memory"],
+    "frameworks": [
+      "crewai",
+      "autogen",
+      "langchain"
+    ],
+    "permissions": [
+      "memory"
+    ],
     "timeout": 10
   },
   "code_analysis": {
@@ -63,9 +71,14 @@
       }
     },
     "dependencies": [],
-    "frameworks": ["crewai", "autogen", "langchain"],
-    "permissions": ["llm"],
+    "frameworks": [
+      "crewai",
+      "autogen",
+      "langchain"
+    ],
+    "permissions": [
+      "llm"
+    ],
     "timeout": 60
   }
 }
-
