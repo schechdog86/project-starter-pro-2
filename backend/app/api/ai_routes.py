@@ -11,6 +11,7 @@ from backend.app.ai import AI_REGISTRY
 from backend.app.ai.llm_service import llm_service
 from backend.app.ai.memory_system import memory_system
 from backend.app.ai.orchestrator import orchestrator
+from backend.app.skills.approval import approval_manager
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -510,4 +511,161 @@ async def get_audit_log(limit: int = 100):
         "entries": orchestrator.get_audit_log(limit=limit),
         "count": len(orchestrator.get_audit_log(limit=limit))
     }
+
+
+# === Approval System Endpoints ===
+
+class ApprovalRequest(BaseModel):
+    item_type: str
+    item_name: str
+    config: Dict
+    reason: str = ""
+
+
+class ApprovalActionRequest(BaseModel):
+    approver: str = "user"
+
+
+class RejectionRequest(BaseModel):
+    reason: str = ""
+    rejector: str = "user"
+
+
+@router.get("/approvals/pending")
+async def get_pending_approvals():
+    """
+    Get all pending approval requests.
+
+    Returns:
+        List of pending approvals
+    """
+    pending = approval_manager.get_pending()
+    return {
+        "pending": pending,
+        "count": len(pending)
+    }
+
+
+@router.get("/approvals/{request_id}")
+async def get_approval_request(request_id: str):
+    """
+    Get a specific approval request.
+
+    Args:
+        request_id: Approval request ID
+
+    Returns:
+        Approval request details
+    """
+    request = approval_manager.get_request(request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail=f"Approval request '{request_id}' not found")
+    return request
+
+
+@router.post("/approvals/request")
+async def request_approval(request: ApprovalRequest):
+    """
+    Request approval for a skill or agent.
+
+    Args:
+        request: Approval request
+
+    Returns:
+        Approval request ID
+    """
+    try:
+        request_id = approval_manager.request_approval(
+            item_type=request.item_type,
+            item_name=request.item_name,
+            config=request.config,
+            reason=request.reason
+        )
+        return {
+            "request_id": request_id,
+            "status": "pending",
+            "message": "Approval requested"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Approval request error: {str(e)}")
+
+
+@router.post("/approvals/{request_id}/approve")
+async def approve_request(request_id: str, request: ApprovalActionRequest):
+    """
+    Approve a pending request.
+
+    Args:
+        request_id: Approval request ID
+        request: Approval action details
+
+    Returns:
+        Approval result
+    """
+    try:
+        success = approval_manager.approve(request_id, approver=request.approver)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Approval request '{request_id}' not found")
+
+        # Get the approved item
+        approved_item = approval_manager.get_request(request_id)
+
+        # If it's a skill, enable it
+        if approved_item["type"] == "skill":
+            skill_name = approved_item["name"]
+            config = approved_item["config"]
+            config["enabled"] = True
+
+            # Update config file
+            from pathlib import Path
+            import json
+            skill_path = Path(__file__).parent.parent / "skills" / skill_name / "config.json"
+            if skill_path.exists():
+                skill_path.write_text(json.dumps(config, indent=2))
+                orchestrator.skill_registry.reload()
+
+        return {
+            "request_id": request_id,
+            "status": "approved",
+            "approved_by": request.approver,
+            "message": "Request approved successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Approval error: {str(e)}")
+
+
+@router.post("/approvals/{request_id}/reject")
+async def reject_request(request_id: str, request: RejectionRequest):
+    """
+    Reject a pending request.
+
+    Args:
+        request_id: Approval request ID
+        request: Rejection details
+
+    Returns:
+        Rejection result
+    """
+    try:
+        success = approval_manager.reject(
+            request_id,
+            reason=request.reason,
+            rejector=request.rejector
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Approval request '{request_id}' not found")
+
+        return {
+            "request_id": request_id,
+            "status": "rejected",
+            "rejected_by": request.rejector,
+            "reason": request.reason,
+            "message": "Request rejected"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Rejection error: {str(e)}")
 

@@ -1,9 +1,9 @@
 {
   "name": "web_search",
   "version": "1.0.0",
-  "description": "Search the web for information using DuckDuckGo",
+  "description": "Search the web and return titles (demo).",
   "category": "research",
-  "enabled": true,
+  "enabled": false,
   "parameters": {
     "query": {
       "type": "string",
@@ -12,12 +12,11 @@
     },
     "num_results": {
       "type": "integer",
-      "default": 5,
-      "description": "Number of results to return"
+      "required": false,
+      "description": "How many",
+      "default": 5
     }
   },
-  "dependencies": ["requests", "beautifulsoup4"],
-  "frameworks": ["crewai", "autogen", "langchain"],
   "permissions": ["network"],
   "timeout": 30
 }

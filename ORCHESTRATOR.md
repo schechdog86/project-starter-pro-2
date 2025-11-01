@@ -392,9 +392,116 @@ orchestrator.skill_registry.reload()
 
 ---
 
-## 🔐 Approval Policy
+## 🔐 Approval System
 
-### **Auto-Approve**
+### **Skill Approval Workflow**
+
+Skills can be disabled by default (`"enabled": false` in `config.json`) and require approval before use.
+
+#### **1. Request Approval**
+
+```http
+POST /ai/approvals/request
+```
+
+**Request:**
+```json
+{
+  "item_type": "skill",
+  "item_name": "web_search",
+  "config": {
+    "name": "web_search",
+    "version": "1.0.0",
+    "enabled": true
+  },
+  "reason": "Need web search for research tasks"
+}
+```
+
+**Response:**
+```json
+{
+  "request_id": "skill_web_search_1234567890.123",
+  "status": "pending",
+  "message": "Approval requested"
+}
+```
+
+#### **2. List Pending Approvals**
+
+```http
+GET /ai/approvals/pending
+```
+
+**Response:**
+```json
+{
+  "pending": [
+    {
+      "id": "skill_web_search_1234567890.123",
+      "type": "skill",
+      "name": "web_search",
+      "config": {...},
+      "reason": "Need web search for research tasks",
+      "requested_at": "2025-01-15T10:30:00",
+      "status": "pending"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### **3. Approve Request**
+
+```http
+POST /ai/approvals/{request_id}/approve
+```
+
+**Request:**
+```json
+{
+  "approver": "user_name"
+}
+```
+
+**Response:**
+```json
+{
+  "request_id": "skill_web_search_1234567890.123",
+  "status": "approved",
+  "approved_by": "user_name",
+  "message": "Request approved successfully"
+}
+```
+
+#### **4. Reject Request**
+
+```http
+POST /ai/approvals/{request_id}/reject
+```
+
+**Request:**
+```json
+{
+  "reason": "Security concerns",
+  "rejector": "admin"
+}
+```
+
+**Response:**
+```json
+{
+  "request_id": "skill_web_search_1234567890.123",
+  "status": "rejected",
+  "rejected_by": "admin",
+  "reason": "Security concerns",
+  "message": "Request rejected"
+}
+```
+
+### **Agent Approval Policy**
+
+#### **Auto-Approve**
 
 ```json
 {
@@ -402,9 +509,9 @@ orchestrator.skill_registry.reload()
 }
 ```
 
-Skills/agents are automatically approved.
+Agents are automatically approved.
 
-### **User Approval** (Default)
+#### **User Approval** (Default)
 
 ```json
 {
@@ -412,19 +519,47 @@ Skills/agents are automatically approved.
 }
 ```
 
-Requires explicit `approve=True` parameter.
+Requires explicit `approve=True` parameter or approval workflow.
 
 ---
 
 ## 🧪 Testing
 
-### **Test Orchestrator Status**
+### **Run the Demo Script**
+
+The easiest way to test the orchestrator is to run the comprehensive demo:
+
+```bash
+# Start the backend
+cd backend
+uvicorn main:app --reload
+
+# In another terminal, run the demo
+python3 examples/orchestrator_demo.py
+```
+
+The demo script will:
+1. ✅ Check orchestrator status
+2. ✅ List all skills
+3. ✅ Get skill information
+4. ✅ Try to execute a disabled skill (will fail)
+5. ✅ Request approval for the skill
+6. ✅ List pending approvals
+7. ✅ Approve the request
+8. ✅ Execute the now-enabled skill
+9. ✅ Test memory search skill
+10. ✅ Test code analysis skill
+11. ✅ View audit log
+
+### **Manual Testing**
+
+#### **Test Orchestrator Status**
 
 ```bash
 curl http://localhost:8000/ai/orchestrator/status
 ```
 
-### **Test Skill Execution**
+#### **Test Skill Execution**
 
 ```bash
 curl -X POST http://localhost:8000/ai/orchestrator/skills/execute \
@@ -438,7 +573,29 @@ curl -X POST http://localhost:8000/ai/orchestrator/skills/execute \
   }'
 ```
 
-### **Test Memory Search Skill**
+#### **Test Approval Workflow**
+
+```bash
+# Request approval
+curl -X POST http://localhost:8000/ai/approvals/request \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item_type": "skill",
+    "item_name": "web_search",
+    "config": {"name": "web_search", "enabled": true},
+    "reason": "Testing approval workflow"
+  }'
+
+# List pending approvals
+curl http://localhost:8000/ai/approvals/pending
+
+# Approve (replace REQUEST_ID with actual ID)
+curl -X POST http://localhost:8000/ai/approvals/REQUEST_ID/approve \
+  -H "Content-Type: application/json" \
+  -d '{"approver": "test_user"}'
+```
+
+#### **Test Memory Search Skill**
 
 ```bash
 curl -X POST http://localhost:8000/ai/orchestrator/skills/execute \
