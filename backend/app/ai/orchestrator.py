@@ -13,6 +13,7 @@ from datetime import datetime
 
 from backend.app.ai.memory_system import memory_system
 from backend.app.ai.llm_service import llm_service
+from backend.app.ai.data_retrieval import DataRetrieval
 from backend.app.skills.base import BaseSkill
 from backend.app.skills.registry import SkillRegistry
 from backend.app.skills.skill_factory import SkillFactory
@@ -27,9 +28,13 @@ class Orchestrator:
         self.memory = memory_system
         self.skill_registry = SkillRegistry()
         self.skill_factory = SkillFactory(self.skill_registry)
+        self.retriever = DataRetrieval()
         self.loaded_agents: Dict[str, Any] = {}
         self.audit_log: List[dict] = []
-        
+
+        # Import ProjectManager here to avoid circular imports
+        self.project_manager = None
+
         print("✅ Orchestrator initialized")
 
     # -------------------------
@@ -316,7 +321,7 @@ Also generate a basic Python implementation."""
     def get_status(self) -> dict:
         """
         Get orchestrator status.
-        
+
         Returns:
             Status dictionary
         """
@@ -327,6 +332,193 @@ Also generate a basic Python implementation."""
             "loaded_agents": list(self.loaded_agents.keys()),
             "available_skills": self.skill_registry.list_skills()
         }
+
+    # -------------------------
+    # Research & Data Retrieval
+    # -------------------------
+    def research_retrieve(self, topic: str, urls: List[str]) -> dict:
+        """
+        Retrieve and store research data via ScrapeGraph + Firecrawl.
+
+        Args:
+            topic: Research topic
+            urls: List of URLs to scrape
+
+        Returns:
+            Merged research data
+        """
+        try:
+            # Scrape all URLs
+            scrape_results = self.retriever.search_and_cache(topic, urls)
+
+            # Crawl first domain
+            crawl_data = {}
+            if urls:
+                domain = urls[0].split('/')[2] if '/' in urls[0] else urls[0]
+                crawl_data = self.retriever.crawl(domain, depth=1, out_name=f"{topic}_crawl.json")
+
+            # Merge results
+            merged = {
+                "topic": topic,
+                "scrapes": scrape_results,
+                "crawl": crawl_data,
+                "url_count": len(urls)
+            }
+
+            # Store in memory with high importance
+            self.memory.teach(
+                f"Research on {topic}: {len(urls)} sources analyzed",
+                title=f"Research: {topic}"
+            )
+
+            self._log("research_retrieved", {"topic": topic, "urls": len(urls)})
+            print(f"✅ Research retrieved: {topic} ({len(urls)} URLs)")
+
+            return merged
+
+        except Exception as e:
+            self._log("research_error", {"topic": topic, "error": str(e)})
+            print(f"❌ Research retrieval error: {e}")
+            return {"error": str(e)}
+
+    # -------------------------
+    # Project Management
+    # -------------------------
+    def run_project(self, name: str) -> dict:
+        """
+        Run project through document flow.
+
+        Args:
+            name: Project name
+
+        Returns:
+            Project data
+        """
+        # Lazy load project manager to avoid circular imports
+        if not self.project_manager:
+            from backend.app.projects.project_manager import ProjectManager
+            self.project_manager = ProjectManager(self)
+
+        try:
+            result = self.project_manager.handle_project(name)
+            self._log("project_run", {"name": name})
+            print(f"✅ Project run: {name}")
+            return result
+        except Exception as e:
+            self._log("project_error", {"name": name, "error": str(e)})
+            print(f"❌ Project error: {e}")
+            return {"error": str(e)}
+
+    # -------------------------
+    # Skill Approval Methods
+    # -------------------------
+    def get_skill_info(self, name: str) -> Optional[dict]:
+        """
+        Get skill information.
+
+        Args:
+            name: Skill name
+
+        Returns:
+            Skill config or None
+        """
+        return self.skill_registry.get_skill(name)
+
+    def approve_skill(self, name: str, enabled: bool = True) -> bool:
+        """
+        Approve and enable a skill.
+
+        Args:
+            name: Skill name
+            enabled: Whether to enable
+
+        Returns:
+            True if successful
+        """
+        skill_info = self.skill_registry.get_skill(name)
+        if not skill_info:
+            return False
+
+        # Update config
+        skill_info["enabled"] = enabled
+
+        # Save to file
+        from pathlib import Path
+        import json
+        skill_path = Path(self.base_dir, "../skills", name, "config.json")
+        if skill_path.exists():
+            skill_path.write_text(json.dumps(skill_info, indent=2))
+            self.skill_registry.reload()
+            self._log("skill_approved", {"name": name, "enabled": enabled})
+            print(f"✅ Skill approved: {name} (enabled={enabled})")
+            return True
+
+        return False
+
+    def execute_skill(self, name: str, params: dict) -> Any:
+        """
+        Execute a skill with parameters.
+
+        Args:
+            name: Skill name
+            params: Skill parameters
+
+        Returns:
+            Skill execution result
+        """
+        skill = self.load_skill(name)
+        if not skill:
+            raise ValueError(f"Skill '{name}' not found or not enabled")
+
+        result = skill.execute(**params)
+        self._log("skill_executed", {"name": name, "params": params})
+        return result
+
+    def generate_skill_from_prompt(self, name: str, prompt: str) -> dict:
+        """
+        Generate a new skill from a prompt using LLM.
+
+        Args:
+            name: Skill name
+            prompt: Description of what the skill should do
+
+        Returns:
+            Generated skill draft
+        """
+        try:
+            # Create prompt for LLM
+            system_prompt = f"""Generate a Python skill class for '{name}' based on this description:
+{prompt}
+
+The skill should:
+1. Inherit from BaseSkill
+2. Implement execute() method
+3. Validate parameters
+4. Return meaningful results
+
+Also generate a config.json with:
+- name, version, description
+- parameters with types and descriptions
+- permissions needed
+- timeout value
+
+Return both the Python code and JSON config."""
+
+            response = self.llm.chat(system_prompt, temperature=0.3, max_tokens=2000)
+
+            self._log("skill_generated", {"name": name, "prompt": prompt})
+            print(f"✅ Skill draft generated: {name}")
+
+            return {
+                "name": name,
+                "draft": response,
+                "status": "pending_review"
+            }
+
+        except Exception as e:
+            self._log("skill_generation_error", {"name": name, "error": str(e)})
+            print(f"❌ Skill generation error: {e}")
+            return {"error": str(e)}
 
 
 # Singleton instance

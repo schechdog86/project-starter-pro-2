@@ -6,7 +6,7 @@ Endpoints for AI and multi-agent functionality.
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from backend.app.ai import AI_REGISTRY
 from backend.app.ai.llm_service import llm_service
 from backend.app.ai.memory_system import memory_system
@@ -347,6 +347,35 @@ class SkillExecuteRequest(BaseModel):
     parameters: Dict
 
 
+class SkillAddRequest(BaseModel):
+    name: str
+    config: Dict
+    code: str
+    enabled: bool = False
+
+
+class SkillApproveRequest(BaseModel):
+    enabled: bool = True
+
+
+class SkillExecParamsRequest(BaseModel):
+    params: Dict[str, Any] = {}
+
+
+class SkillGenerateRequest(BaseModel):
+    name: str
+    prompt: str
+
+
+class ProjectRequest(BaseModel):
+    name: str
+
+
+class ResearchRequest(BaseModel):
+    topic: str
+    urls: List[str]
+
+
 @router.get("/orchestrator/status")
 async def orchestrator_status():
     """
@@ -475,6 +504,90 @@ async def execute_skill(request: SkillExecuteRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Skill execution error: {str(e)}")
+
+
+@router.post("/skills")
+async def add_skill(request: SkillAddRequest):
+    """
+    Add a new skill with config and code.
+
+    Args:
+        request: Skill add request
+
+    Returns:
+        Success status
+    """
+    try:
+        orchestrator.add_skill(request.name, request.config, request.code)
+
+        # If enabled, approve it
+        if request.enabled:
+            orchestrator.approve_skill(request.name, enabled=True)
+
+        return {"ok": True, "name": request.name, "enabled": request.enabled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Skill add error: {str(e)}")
+
+
+@router.post("/skills/{name}/approve")
+async def approve_skill_endpoint(name: str, request: SkillApproveRequest):
+    """
+    Approve and enable a skill.
+
+    Args:
+        name: Skill name
+        request: Approval request
+
+    Returns:
+        Success status
+    """
+    try:
+        success = orchestrator.approve_skill(name, enabled=request.enabled)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+
+        return {"ok": True, "name": name, "enabled": request.enabled}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Skill approval error: {str(e)}")
+
+
+@router.post("/skills/{name}/execute")
+async def execute_skill_by_name(name: str, request: SkillExecParamsRequest):
+    """
+    Execute a skill by name with parameters.
+
+    Args:
+        name: Skill name
+        request: Execution parameters
+
+    Returns:
+        Execution result
+    """
+    try:
+        result = orchestrator.execute_skill(name, request.params)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/skills/generate")
+async def generate_skill(request: SkillGenerateRequest):
+    """
+    Generate a new skill from a prompt.
+
+    Args:
+        request: Skill generation request
+
+    Returns:
+        Generated skill draft
+    """
+    try:
+        result = orchestrator.generate_skill_from_prompt(request.name, request.prompt)
+        return {"ok": True, "draft": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Skill generation error: {str(e)}")
 
 
 @router.post("/orchestrator/skills/reload")
@@ -668,4 +781,69 @@ async def reject_request(request_id: str, request: RejectionRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rejection error: {str(e)}")
+
+
+# === Project Management Endpoints ===
+
+@router.post("/projects/run")
+async def run_project(request: ProjectRequest):
+    """
+    Run a project through document flow.
+
+    Args:
+        request: Project request
+
+    Returns:
+        Project result
+    """
+    try:
+        result = orchestrator.run_project(request.name)
+        return {"ok": True, "project": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/projects/{name}/status")
+async def project_status(name: str):
+    """
+    Get project status.
+
+    Args:
+        name: Project name
+
+    Returns:
+        Project status
+    """
+    try:
+        # For now, return basic status
+        # In full implementation, this would load from project_fs
+        return {
+            "project": {
+                "name": name,
+                "phase": "planning",
+                "status": "active"
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+
+
+# === Research & Data Retrieval Endpoints ===
+
+@router.post("/research/retrieve")
+async def research_retrieve(request: ResearchRequest):
+    """
+    Retrieve research data from URLs.
+
+    Args:
+        request: Research request
+
+    Returns:
+        Research data
+    """
+    try:
+        result = orchestrator.research_retrieve(request.topic, request.urls)
+        return {"ok": True, "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Research retrieval error: {str(e)}")
 
