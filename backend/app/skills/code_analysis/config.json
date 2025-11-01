@@ -1,0 +1,24 @@
+{
+  "name": "code_analysis",
+  "version": "1.0.0",
+  "description": "Analyze code for quality, security, and best practices",
+  "category": "development",
+  "enabled": true,
+  "parameters": {
+    "code": {
+      "type": "string",
+      "required": true,
+      "description": "Code to analyze"
+    },
+    "language": {
+      "type": "string",
+      "default": "python",
+      "description": "Programming language"
+    }
+  },
+  "dependencies": [],
+  "frameworks": ["crewai", "autogen", "langchain"],
+  "permissions": ["llm"],
+  "timeout": 60
+}
+

@@ -1,0 +1,72 @@
+{
+  "web_search": {
+    "name": "web_search",
+    "version": "1.0.0",
+    "description": "Search the web for information using DuckDuckGo",
+    "category": "research",
+    "enabled": true,
+    "parameters": {
+      "query": {
+        "type": "string",
+        "required": true,
+        "description": "Search query"
+      },
+      "num_results": {
+        "type": "integer",
+        "default": 5,
+        "description": "Number of results to return"
+      }
+    },
+    "dependencies": ["requests", "beautifulsoup4"],
+    "frameworks": ["crewai", "autogen", "langchain"],
+    "permissions": ["network"],
+    "timeout": 30
+  },
+  "memory_search": {
+    "name": "memory_search",
+    "version": "1.0.0",
+    "description": "Search the AI memory system for relevant information",
+    "category": "memory",
+    "enabled": true,
+    "parameters": {
+      "query": {
+        "type": "string",
+        "required": true,
+        "description": "Memory search query"
+      },
+      "k": {
+        "type": "integer",
+        "default": 10,
+        "description": "Number of memories to retrieve"
+      }
+    },
+    "dependencies": [],
+    "frameworks": ["crewai", "autogen", "langchain"],
+    "permissions": ["memory"],
+    "timeout": 10
+  },
+  "code_analysis": {
+    "name": "code_analysis",
+    "version": "1.0.0",
+    "description": "Analyze code for quality, security, and best practices",
+    "category": "development",
+    "enabled": true,
+    "parameters": {
+      "code": {
+        "type": "string",
+        "required": true,
+        "description": "Code to analyze"
+      },
+      "language": {
+        "type": "string",
+        "default": "python",
+        "description": "Programming language"
+      }
+    },
+    "dependencies": [],
+    "frameworks": ["crewai", "autogen", "langchain"],
+    "permissions": ["llm"],
+    "timeout": 60
+  }
+}
+

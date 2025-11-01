@@ -10,6 +10,7 @@ from typing import Optional, List, Dict
 from backend.app.ai import AI_REGISTRY
 from backend.app.ai.llm_service import llm_service
 from backend.app.ai.memory_system import memory_system
+from backend.app.ai.orchestrator import orchestrator
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -330,4 +331,183 @@ async def memory_validate(memory_id: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Memory validation error: {str(e)}")
+
+
+# === Orchestrator Endpoints ===
+
+class AgentCreateRequest(BaseModel):
+    name: str
+    config: Dict
+    approve: bool = False
+
+
+class SkillExecuteRequest(BaseModel):
+    skill_name: str
+    parameters: Dict
+
+
+@router.get("/orchestrator/status")
+async def orchestrator_status():
+    """
+    Get orchestrator status.
+
+    Returns:
+        Orchestrator status
+    """
+    return orchestrator.get_status()
+
+
+@router.get("/orchestrator/agents")
+async def list_agents():
+    """
+    List all loaded agents.
+
+    Returns:
+        List of agent names
+    """
+    return {
+        "agents": orchestrator.list_agents(),
+        "count": len(orchestrator.list_agents())
+    }
+
+
+@router.post("/orchestrator/agents")
+async def create_agent(request: AgentCreateRequest):
+    """
+    Create a new agent.
+
+    Args:
+        request: Agent creation request
+
+    Returns:
+        Creation result
+    """
+    try:
+        created = orchestrator.create_agent(
+            name=request.name,
+            config=request.config,
+            approve=request.approve
+        )
+        return {
+            "name": request.name,
+            "created": created,
+            "status": "created" if created else "pending_approval"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent creation error: {str(e)}")
+
+
+@router.delete("/orchestrator/agents/{agent_name}")
+async def destroy_agent(agent_name: str):
+    """
+    Destroy an agent.
+
+    Args:
+        agent_name: Agent name
+
+    Returns:
+        Destruction result
+    """
+    try:
+        orchestrator.destroy_agent(agent_name)
+        return {
+            "name": agent_name,
+            "status": "destroyed"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent destruction error: {str(e)}")
+
+
+@router.get("/orchestrator/skills")
+async def list_skills():
+    """
+    List all available skills.
+
+    Returns:
+        List of skills
+    """
+    skills = orchestrator.list_skills()
+    return {
+        "skills": skills,
+        "count": len(skills)
+    }
+
+
+@router.get("/orchestrator/skills/{skill_name}")
+async def get_skill_info(skill_name: str):
+    """
+    Get skill information.
+
+    Args:
+        skill_name: Skill name
+
+    Returns:
+        Skill configuration
+    """
+    skill_info = orchestrator.skill_registry.get_skill(skill_name)
+    if not skill_info:
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
+    return skill_info
+
+
+@router.post("/orchestrator/skills/execute")
+async def execute_skill(request: SkillExecuteRequest):
+    """
+    Execute a skill.
+
+    Args:
+        request: Skill execution request
+
+    Returns:
+        Skill execution result
+    """
+    try:
+        skill = orchestrator.load_skill(request.skill_name)
+        if not skill:
+            raise HTTPException(status_code=404, detail=f"Skill '{request.skill_name}' not found")
+
+        result = skill.execute(**request.parameters)
+        return {
+            "skill": request.skill_name,
+            "result": result,
+            "status": "success"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Skill execution error: {str(e)}")
+
+
+@router.post("/orchestrator/skills/reload")
+async def reload_skills():
+    """
+    Reload all skills from disk.
+
+    Returns:
+        Reload result
+    """
+    try:
+        orchestrator.skill_registry.reload()
+        return {
+            "status": "reloaded",
+            "skills": orchestrator.list_skills(),
+            "count": len(orchestrator.list_skills())
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Skill reload error: {str(e)}")
+
+
+@router.get("/orchestrator/audit-log")
+async def get_audit_log(limit: int = 100):
+    """
+    Get orchestrator audit log.
+
+    Args:
+        limit: Maximum number of entries
+
+    Returns:
+        Audit log entries
+    """
+    return {
+        "entries": orchestrator.get_audit_log(limit=limit),
+        "count": len(orchestrator.get_audit_log(limit=limit))
+    }
 

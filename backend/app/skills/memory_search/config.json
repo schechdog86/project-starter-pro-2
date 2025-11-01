@@ -1,0 +1,24 @@
+{
+  "name": "memory_search",
+  "version": "1.0.0",
+  "description": "Search the AI memory system for relevant information",
+  "category": "memory",
+  "enabled": true,
+  "parameters": {
+    "query": {
+      "type": "string",
+      "required": true,
+      "description": "Memory search query"
+    },
+    "k": {
+      "type": "integer",
+      "default": 10,
+      "description": "Number of memories to retrieve"
+    }
+  },
+  "dependencies": [],
+  "frameworks": ["crewai", "autogen", "langchain"],
+  "permissions": ["memory"],
+  "timeout": 10
+}
+
