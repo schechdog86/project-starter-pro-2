@@ -1,3 +1,4 @@
+# === CORE BACKEND STACK ===
 fastapi
 uvicorn
 sqlalchemy[asyncio]
@@ -8,3 +9,41 @@ redis
 alembic
 python-jose[cryptography]
 passlib[bcrypt]
+
+# === CORE AI STACK ===
+scrapegraph-ai
+langchain
+llama-index
+haystack-ai
+litellm
+tiktoken
+transformers
+sentence-transformers
+chromadb
+faiss-cpu
+
+# === MULTI-AGENT / ORCHESTRATION FRAMEWORKS ===
+autogen-agent               # Microsoft AutoGen for LLM orchestration
+crewai                      # Multi-agent teamwork framework
+langgraph                   # Graph-based stateful multi-agent systems
+openai-swarm                # Lightweight OpenAI multi-agent system
+metagpt                     # Hierarchical agent collaboration framework
+superagi                    # Full open-source agent management platform
+taskweaver                  # Microsoft agent for workflow/data analytics
+atomic-agents               # Schema-based modular agent framework
+smolagents                  # Lightweight, minimal abstraction agents
+
+# === ENTERPRISE & HYBRID FRAMEWORKS ===
+semantic-kernel             # Microsoft framework for embedding AI "skills"
+rasa                        # Conversational AI / chatbot framework
+
+# === TRANSFORMER + MODEL ECOSYSTEM ===
+huggingface-hub             # Model hosting and API access
+datasets                    # HF Datasets integration
+evaluate                    # Model evaluation toolkit
+
+# === VECTOR / MEMORY UTILITIES ===
+weaviate-client
+pinecone-client
+milvus
+redis
