@@ -1,0 +1,31 @@
+{
+  "name": "project-starter-pro-2-desktop",
+  "version": "1.0.0",
+  "description": "Electron desktop app for Project Starter Pro 2 - AI-powered project management and orchestration",
+  "main": "main.js",
+  "author": "Schechter Customs LLC",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:react\" \"npm:dev:electron\"",
+    "dev:react": "cd react-ui && npm run dev",
+    "dev:electron": "wait-on tcp:5173 && electron .",
+    "build:react": "cd react-ui && npm run build",
+    "start": "electron .",
+    "build": "npm run build:react && electron-builder",
+    "pack": "npm run build:react && electron-builder --dir",
+    "dist": "npm run build:react && electron-builder --publish never"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "concurrently": "^9.0.1",
+    "dockerode": "^4.0.2",
+    "electron-is-dev": "^3.0.1",
+    "systeminformation": "^5.25.11",
+    "wait-on": "^8.0.2"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}
+

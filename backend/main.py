@@ -13,3 +13,9 @@ app.include_router(ai_routes.router)
 @app.get("/")
 def root():
     return {"status": "ok", "project": "Project Starter Pro 2"}
+
+
+@app.get("/health")
+def health():
+    # Basic liveness check; extend with DB/Redis checks if needed
+    return {"status": "ok"}

@@ -1,49 +1,153 @@
+# ============================================================
+# PROJECT STARTER PRO 2 - COMPLETE AI FRAMEWORK REQUIREMENTS
+# ============================================================
+# This file includes ALL major AI/ML frameworks and multi-agent systems
+# for building enterprise-grade AI applications
+# ============================================================
+
 # === CORE BACKEND STACK ===
-fastapi
-uvicorn
-sqlalchemy[asyncio]
-asyncpg
-pydantic-settings
-celery
-redis
-alembic
-python-jose[cryptography]
-passlib[bcrypt]
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0                      # PostgreSQL async driver
+aiosqlite>=0.19.0                    # SQLite async driver
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+celery>=5.3.0
+redis>=5.0.0
+alembic>=1.12.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6              # For file uploads
+httpx>=0.25.0                        # Async HTTP client
 
-# === CORE AI STACK ===
-scrapegraph-ai
-langchain
-llama-index
-haystack-ai
-litellm
-tiktoken
-transformers
-sentence-transformers
-chromadb
-faiss-cpu
+# === CORE AI & LLM FRAMEWORKS ===
+# Primary LLM Application Frameworks
+langchain>=0.1.0                     # Modular framework for complex LLM apps with RAG, memory, tools
+langchain-community>=0.0.20          # LangChain community integrations
+langchain-openai>=0.0.5              # LangChain OpenAI integration
+langchain-anthropic>=0.1.0           # LangChain Anthropic integration
+langchain-core>=0.1.0                # LangChain core components
+llama-index>=0.9.0                   # Data ingestion, indexing, and retrieval (RAG-focused)
+haystack-ai>=2.0.0                   # End-to-end NLP framework for search and QA
+litellm>=1.17.0                      # Unified API for 100+ LLMs (OpenAI, Anthropic, etc.)
 
-# === MULTI-AGENT / ORCHESTRATION FRAMEWORKS ===
-autogen-agent               # Microsoft AutoGen for LLM orchestration
-crewai                      # Multi-agent teamwork framework
-langgraph                   # Graph-based stateful multi-agent systems
-openai-swarm                # Lightweight OpenAI multi-agent system
-metagpt                     # Hierarchical agent collaboration framework
-superagi                    # Full open-source agent management platform
-taskweaver                  # Microsoft agent for workflow/data analytics
-atomic-agents               # Schema-based modular agent framework
-smolagents                  # Lightweight, minimal abstraction agents
+# LLM API Clients
+openai>=1.6.0                        # OpenAI API
+anthropic>=0.8.0                     # Anthropic Claude API
+cohere>=4.37                         # Cohere API
+google-generativeai>=0.3.0           # Google Gemini API
 
-# === ENTERPRISE & HYBRID FRAMEWORKS ===
-semantic-kernel             # Microsoft framework for embedding AI "skills"
-rasa                        # Conversational AI / chatbot framework
+# Tokenizers & Text Processing
+tiktoken>=0.5.0                      # OpenAI tokenizer
+tokenizers>=0.15.0                   # Fast tokenizers
 
-# === TRANSFORMER + MODEL ECOSYSTEM ===
-huggingface-hub             # Model hosting and API access
-datasets                    # HF Datasets integration
-evaluate                    # Model evaluation toolkit
+# === WEB SCRAPING & DATA RETRIEVAL ===
+scrapegraphai>=1.0.0                 # AI-powered web scraping with LLMs
+firecrawl-py>=0.0.5                  # Firecrawl API client for domain crawling
+playwright>=1.40.0                   # Browser automation
+undetected-playwright>=0.3.0         # Undetected browser automation
+beautifulsoup4>=4.12.0               # HTML parsing
+lxml>=4.9.0                          # XML/HTML parser
+requests>=2.31.0                     # HTTP library
+httpx>=0.25.0                        # Async HTTP client
+selenium>=4.15.0                     # Web browser automation
+scrapy>=2.11.0                       # Web scraping framework
+duckduckgo-search>=4.0.0             # DuckDuckGo search API
 
-# === VECTOR / MEMORY UTILITIES ===
-weaviate-client
-pinecone-client
-milvus
-redis
+# === MULTI-AGENT ORCHESTRATION FRAMEWORKS ===
+# Microsoft Frameworks
+pyautogen>=0.2.0                     # Microsoft AutoGen - multi-agent communication & collaboration
+semantic-kernel>=0.4.0               # Microsoft Semantic Kernel - AI "skills" integration
+# taskweaver                         # Microsoft TaskWeaver - code-first data analytics (install from GitHub)
+
+# Role-Based & Team Frameworks
+crewai>=0.11.0                       # CrewAI - role-based multi-agent teamwork
+metagpt>=0.6.0                       # MetaGPT - hierarchical agent collaboration (software company simulation)
+
+# Graph & State-Based Frameworks
+langgraph>=0.0.20                    # LangGraph - graph-based stateful multi-agent systems (LangChain ecosystem)
+
+# Lightweight & Modular Frameworks
+atomic-agents>=1.0.0                 # Atomic Agents - schema-based modular agent framework
+smolagents>=0.1.0                    # Smolagents - lightweight, minimal abstraction agents
+
+# Agent Management Platforms
+# superagi                           # SuperAGI - full open-source agent management platform (install from GitHub)
+
+# OpenAI Experimental
+# openai-swarm                       # OpenAI Swarm - lightweight multi-agent coordination (install from GitHub)
+
+# === CONVERSATIONAL AI & CHATBOTS ===
+# rasa>=3.6.0                        # Rasa - customizable conversational AI (heavy dependency - optional)
+
+# === TRANSFORMER & MODEL ECOSYSTEM ===
+transformers>=4.36.0                 # Hugging Face transformers
+sentence-transformers>=2.2.0         # Sentence embeddings
+huggingface-hub>=0.19.0              # Model hosting and API access
+datasets>=2.15.0                     # HF Datasets integration
+evaluate>=0.4.0                      # Model evaluation toolkit
+accelerate>=0.25.0                   # Training acceleration
+safetensors>=0.4.0                   # Safe tensor serialization
+torch>=2.1.0                         # PyTorch (required for transformers)
+torchvision>=0.16.0                  # Computer vision models
+torchaudio>=2.1.0                    # Audio processing
+
+# === VECTOR DATABASES & EMBEDDINGS ===
+chromadb>=0.4.18                     # Embedded vector database
+faiss-cpu>=1.7.4                     # Facebook AI similarity search
+weaviate-client>=3.26.0              # Weaviate vector database client
+pinecone-client>=2.2.0               # Pinecone vector database client
+# milvus>=2.3.0                      # Milvus vector database (optional - heavy)
+qdrant-client>=1.7.0                 # Qdrant vector database
+
+# === DATA PROCESSING & UTILITIES ===
+pandas>=2.1.0                        # Data manipulation
+numpy>=1.24.0                        # Numerical computing
+scipy>=1.11.0                        # Scientific computing
+scikit-learn>=1.3.0                  # Machine learning utilities
+matplotlib>=3.8.0                    # Plotting
+seaborn>=0.13.0                      # Statistical visualization
+
+# === DOCUMENT PROCESSING ===
+pypdf>=3.17.0                        # PDF reading
+pypdf2>=3.0.0                        # PDF manipulation
+python-docx>=1.1.0                   # Word documents
+openpyxl>=3.1.0                      # Excel files
+markdown>=3.5.0                      # Markdown to HTML converter
+weasyprint>=60.0                     # HTML to PDF converter
+reportlab>=4.0.0                     # PDF generation
+
+# === API & INTEGRATION UTILITIES ===
+pydantic>=2.0.0                      # Data validation
+pydantic-settings>=2.0.0             # Settings management
+python-dotenv>=1.0.0                 # Environment variables
+tenacity>=8.2.0                      # Retry logic
+backoff>=2.2.0                       # Exponential backoff
+ratelimit>=2.2.0                     # Rate limiting
+
+# === MONITORING & LOGGING ===
+loguru>=0.7.0                        # Advanced logging
+prometheus-client>=0.19.0            # Metrics
+sentry-sdk>=1.39.0                   # Error tracking
+
+# === TESTING & DEVELOPMENT ===
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black>=23.12.0                       # Code formatting
+ruff>=0.1.0                          # Fast linter
+mypy>=1.7.0                          # Type checking
+
+# === ADDITIONAL UTILITIES ===
+python-json-logger>=2.0.0            # JSON logging
+aiofiles>=23.2.0                     # Async file operations
+python-magic>=0.4.27                 # File type detection
+pillow>=10.1.0                       # Image processing
+pyyaml>=6.0.1                        # YAML parsing
+toml>=0.10.2                         # TOML parsing
+jsonschema>=4.20.0                   # JSON schema validation
+validators>=0.22.0                   # Data validators
+python-slugify>=8.0.0                # URL-safe slugs
+pytz>=2023.3                         # Timezone support
+python-dateutil>=2.8.2               # Date utilities

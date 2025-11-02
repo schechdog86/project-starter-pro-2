@@ -1,8 +1,8 @@
 # API Specification
 
-**Version**: 1.0.0  
-**Last Updated**: 2025-10-30  
-**Status**: Draft  
+**Version**: 2.0.0
+**Last Updated**: 2025-11-02
+**Status**: Active
 
 ## Purpose
 
@@ -798,6 +798,787 @@ All errors follow this structure:
 
 ---
 
+---
+
+## AI & Multi-Agent System API
+
+### AI Status & Health
+
+#### Get AI Status
+**Endpoint**: `GET /ai/status`
+
+**Response**: `200 OK`
+```json
+{
+  "status": "healthy",
+  "frameworks_loaded": 100,
+  "orchestrator_active": true,
+  "memory_system_active": true
+}
+```
+
+#### Get AI Health
+**Endpoint**: `GET /ai/health`
+
+**Response**: `200 OK`
+```json
+{
+  "status": "healthy",
+  "components": {
+    "orchestrator": "active",
+    "memory": "active",
+    "skills": "active"
+  }
+}
+```
+
+### AI Frameworks
+
+#### List All Frameworks
+**Endpoint**: `GET /ai/frameworks`
+
+**Response**: `200 OK`
+```json
+{
+  "core": ["langchain", "llamaindex", "haystack", "litellm"],
+  "multi_agents": ["autogen", "crewai", "langgraph", "metagpt", "semantic-kernel"],
+  "enterprise": ["semantic-kernel", "rasa"],
+  "transformers": ["transformers", "sentence-transformers", "datasets"]
+}
+```
+
+#### Get Frameworks by Category
+**Endpoint**: `GET /ai/frameworks/{category}`
+
+**Path Parameters**:
+- `category`: core | multi_agents | enterprise | transformers
+
+**Response**: `200 OK`
+```json
+{
+  "category": "multi_agents",
+  "frameworks": ["autogen", "crewai", "langgraph", "metagpt"]
+}
+```
+
+### LLM Chat
+
+#### Single Message Chat
+**Endpoint**: `POST /ai/chat`
+
+**Request Body**:
+```json
+{
+  "message": "What is FastAPI?",
+  "provider": "openai",
+  "model": "gpt-4",
+  "temperature": 0.7,
+  "max_tokens": 500
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "response": "FastAPI is a modern, fast web framework...",
+  "provider": "openai",
+  "model": "gpt-4",
+  "tokens_used": 150
+}
+```
+
+#### Chat with History
+**Endpoint**: `POST /ai/chat/history`
+
+**Request Body**:
+```json
+{
+  "messages": [
+    {"role": "user", "content": "What is FastAPI?"},
+    {"role": "assistant", "content": "FastAPI is..."},
+    {"role": "user", "content": "How do I install it?"}
+  ],
+  "provider": "openai",
+  "model": "gpt-4"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "response": "You can install FastAPI using pip...",
+  "conversation_id": "conv_123"
+}
+```
+
+### LLM Providers & Models
+
+#### List LLM Providers
+**Endpoint**: `GET /ai/llm/providers`
+
+**Response**: `200 OK`
+```json
+{
+  "providers": [
+    {
+      "name": "openai",
+      "status": "active",
+      "models_count": 10
+    },
+    {
+      "name": "anthropic",
+      "status": "active",
+      "models_count": 5
+    }
+  ]
+}
+```
+
+#### Get Models by Provider
+**Endpoint**: `GET /ai/llm/models/{provider}`
+
+**Path Parameters**:
+- `provider`: openai | anthropic | cohere | google
+
+**Response**: `200 OK`
+```json
+{
+  "provider": "openai",
+  "models": [
+    {
+      "id": "gpt-4",
+      "name": "GPT-4",
+      "context_window": 8192,
+      "pricing": {"input": 0.03, "output": 0.06}
+    },
+    {
+      "id": "gpt-3.5-turbo",
+      "name": "GPT-3.5 Turbo",
+      "context_window": 4096,
+      "pricing": {"input": 0.001, "output": 0.002}
+    }
+  ]
+}
+```
+
+### Memory System
+
+#### Insert Memory
+**Endpoint**: `POST /ai/memory/insert`
+
+**Request Body**:
+```json
+{
+  "text": "FastAPI uses Pydantic for data validation",
+  "metadata": {
+    "source": "documentation",
+    "topic": "fastapi",
+    "importance": 0.8
+  }
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "id": "mem_abc123",
+  "tier": "LT_HOT",
+  "inserted_at": "2025-11-02T10:00:00Z"
+}
+```
+
+#### Search Memory
+**Endpoint**: `POST /ai/memory/search`
+
+**Request Body**:
+```json
+{
+  "query": "How does FastAPI handle validation?",
+  "top_k": 5,
+  "tier": "all"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "results": [
+    {
+      "id": "mem_abc123",
+      "text": "FastAPI uses Pydantic for data validation",
+      "score": 0.95,
+      "tier": "LT_HOT",
+      "metadata": {"topic": "fastapi"}
+    }
+  ],
+  "total": 1
+}
+```
+
+#### Teach to Forever Tier
+**Endpoint**: `POST /ai/memory/teach`
+
+**Request Body**:
+```json
+{
+  "text": "Always use async/await for database operations",
+  "metadata": {
+    "category": "best_practices",
+    "importance": 1.0
+  }
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "id": "mem_xyz789",
+  "tier": "FV",
+  "message": "Memory stored in Forever tier"
+}
+```
+
+#### Semantic Recall
+**Endpoint**: `POST /ai/memory/recall`
+
+**Request Body**:
+```json
+{
+  "query": "database best practices",
+  "top_k": 10
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "memories": [
+    {
+      "text": "Always use async/await for database operations",
+      "relevance": 0.92,
+      "tier": "FV"
+    }
+  ]
+}
+```
+
+#### Get Memory Statistics
+**Endpoint**: `GET /ai/memory/stats`
+
+**Response**: `200 OK`
+```json
+{
+  "total_memories": 1500,
+  "by_tier": {
+    "ST": 50,
+    "MT": 200,
+    "LT_HOT": 800,
+    "FV": 450
+  },
+  "total_size_mb": 25.6
+}
+```
+
+#### Validate Memory
+**Endpoint**: `GET /ai/memory/validate/{id}`
+
+**Path Parameters**:
+- `id`: Memory ID
+
+**Response**: `200 OK`
+```json
+{
+  "id": "mem_abc123",
+  "valid": true,
+  "tier": "LT_HOT",
+  "last_accessed": "2025-11-02T09:00:00Z"
+}
+```
+
+### Orchestrator
+
+#### Get Orchestrator Status
+**Endpoint**: `GET /ai/orchestrator/status`
+
+**Response**: `200 OK`
+```json
+{
+  "status": "active",
+  "agents_count": 5,
+  "skills_count": 12,
+  "pending_approvals": 2,
+  "uptime_seconds": 86400
+}
+```
+
+#### List Agents
+**Endpoint**: `GET /ai/orchestrator/agents`
+
+**Response**: `200 OK`
+```json
+{
+  "agents": [
+    "research_agent",
+    "code_analysis_agent",
+    "documentation_agent"
+  ],
+  "total": 3
+}
+```
+
+#### Create Agent
+**Endpoint**: `POST /ai/orchestrator/agents`
+
+**Request Body**:
+```json
+{
+  "name": "research_agent",
+  "config": {
+    "role": "researcher",
+    "skills": ["web_search", "data_analysis"],
+    "max_iterations": 10
+  },
+  "approve": true
+}
+```
+
+**Response**: `201 Created`
+```json
+{
+  "name": "research_agent",
+  "status": "created",
+  "approved": true
+}
+```
+
+#### Destroy Agent
+**Endpoint**: `DELETE /ai/orchestrator/agents/{name}`
+
+**Path Parameters**:
+- `name`: Agent name
+
+**Response**: `200 OK`
+```json
+{
+  "name": "research_agent",
+  "status": "destroyed"
+}
+```
+
+#### Get Audit Log
+**Endpoint**: `GET /ai/orchestrator/audit-log`
+
+**Query Parameters**:
+- `limit` (optional): Max entries, default: 100
+
+**Response**: `200 OK`
+```json
+{
+  "entries": [
+    {
+      "timestamp": "2025-11-02T10:00:00Z",
+      "action": "agent_created",
+      "agent": "research_agent",
+      "user": "admin"
+    }
+  ],
+  "total": 1
+}
+```
+
+#### List Skills (Orchestrator)
+**Endpoint**: `GET /ai/orchestrator/skills`
+
+**Response**: `200 OK`
+```json
+{
+  "skills": [
+    {
+      "name": "web_search",
+      "enabled": true,
+      "approved": true
+    }
+  ]
+}
+```
+
+#### Get Skill Info
+**Endpoint**: `GET /ai/orchestrator/skills/{name}`
+
+**Path Parameters**:
+- `name`: Skill name
+
+**Response**: `200 OK`
+```json
+{
+  "name": "web_search",
+  "description": "Search the web using DuckDuckGo",
+  "parameters": ["query", "num_results"],
+  "enabled": true,
+  "approved": true
+}
+```
+
+#### Execute Skill (Orchestrator)
+**Endpoint**: `POST /ai/orchestrator/skills/execute`
+
+**Request Body**:
+```json
+{
+  "skill_name": "web_search",
+  "params": {
+    "query": "FastAPI tutorial",
+    "num_results": 5
+  }
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "result": {
+    "results": ["Result 1", "Result 2", "Result 3"]
+  },
+  "execution_time_ms": 1250
+}
+```
+
+#### Reload Skills
+**Endpoint**: `POST /ai/orchestrator/skills/reload`
+
+**Response**: `200 OK`
+```json
+{
+  "status": "reloaded",
+  "skills_count": 12
+}
+```
+
+### Skills Management
+
+#### List Skills
+**Endpoint**: `GET /ai/skills`
+
+**Response**: `200 OK`
+```json
+{
+  "skills": [
+    {
+      "name": "web_search",
+      "enabled": true,
+      "approved": true,
+      "description": "Search the web"
+    }
+  ],
+  "total": 12
+}
+```
+
+#### Get Skill
+**Endpoint**: `GET /ai/skills/{name}`
+
+**Path Parameters**:
+- `name`: Skill name
+
+**Response**: `200 OK`
+```json
+{
+  "name": "web_search",
+  "description": "Search the web using DuckDuckGo",
+  "parameters": {
+    "query": {"type": "string", "required": true},
+    "num_results": {"type": "integer", "default": 5}
+  },
+  "code": "def execute(query, num_results=5): ...",
+  "enabled": true,
+  "approved": true
+}
+```
+
+#### Add Skill
+**Endpoint**: `POST /ai/skills`
+
+**Request Body**:
+```json
+{
+  "name": "custom_skill",
+  "config": {
+    "description": "Custom skill",
+    "parameters": ["param1", "param2"]
+  },
+  "code": "def execute(param1, param2): return {'result': param1 + param2}",
+  "enabled": true
+}
+```
+
+**Response**: `201 Created`
+```json
+{
+  "name": "custom_skill",
+  "status": "created",
+  "enabled": true
+}
+```
+
+#### Approve Skill
+**Endpoint**: `POST /ai/skills/{name}/approve`
+
+**Path Parameters**:
+- `name`: Skill name
+
+**Request Body**:
+```json
+{
+  "enabled": true,
+  "approver": "admin"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "name": "custom_skill",
+  "approved": true,
+  "enabled": true
+}
+```
+
+#### Execute Skill
+**Endpoint**: `POST /ai/skills/{name}/execute`
+
+**Path Parameters**:
+- `name`: Skill name
+
+**Request Body**:
+```json
+{
+  "params": {
+    "param1": "value1",
+    "param2": "value2"
+  }
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "result": {"output": "execution result"},
+  "execution_time_ms": 500
+}
+```
+
+#### Generate Skill
+**Endpoint**: `POST /ai/skills/generate`
+
+**Request Body**:
+```json
+{
+  "name": "new_skill",
+  "prompt": "Create a skill that fetches weather data for a given city"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "name": "new_skill",
+  "code": "def execute(city): ...",
+  "status": "generated",
+  "requires_approval": true
+}
+```
+
+### Research
+
+#### Retrieve Research Data
+**Endpoint**: `POST /ai/research/retrieve`
+
+**Request Body**:
+```json
+{
+  "urls": [
+    "https://fastapi.tiangolo.com/",
+    "https://docs.python.org/3/"
+  ],
+  "topic": "FastAPI best practices",
+  "max_depth": 2
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "results": [
+    {
+      "url": "https://fastapi.tiangolo.com/",
+      "title": "FastAPI Documentation",
+      "content": "Scraped content...",
+      "metadata": {"crawl_depth": 1}
+    }
+  ],
+  "total": 2,
+  "cached": true
+}
+```
+
+### Approvals Workflow
+
+#### Get Pending Approvals
+**Endpoint**: `GET /ai/approvals/pending`
+
+**Response**: `200 OK`
+```json
+{
+  "pending": [
+    {
+      "id": "approval_123",
+      "type": "skill",
+      "name": "custom_skill",
+      "reason": "User-generated skill",
+      "timestamp": "2025-11-02T10:00:00Z",
+      "requester": "user_123"
+    }
+  ],
+  "total": 1
+}
+```
+
+#### Get Approval Details
+**Endpoint**: `GET /ai/approvals/{id}`
+
+**Path Parameters**:
+- `id`: Approval ID
+
+**Response**: `200 OK`
+```json
+{
+  "id": "approval_123",
+  "type": "skill",
+  "name": "custom_skill",
+  "config": {"description": "Custom skill"},
+  "code": "def execute(): ...",
+  "status": "pending",
+  "timestamp": "2025-11-02T10:00:00Z",
+  "requester": "user_123"
+}
+```
+
+#### Request Approval
+**Endpoint**: `POST /ai/approvals/request`
+
+**Request Body**:
+```json
+{
+  "type": "skill",
+  "name": "custom_skill",
+  "reason": "Need this skill for project",
+  "config": {"description": "Custom skill"}
+}
+```
+
+**Response**: `201 Created`
+```json
+{
+  "id": "approval_124",
+  "status": "pending",
+  "message": "Approval request submitted"
+}
+```
+
+#### Approve Request
+**Endpoint**: `POST /ai/approvals/{id}/approve`
+
+**Path Parameters**:
+- `id`: Approval ID
+
+**Request Body**:
+```json
+{
+  "approver": "admin",
+  "notes": "Approved for production use"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "id": "approval_123",
+  "status": "approved",
+  "approved_at": "2025-11-02T11:00:00Z",
+  "approver": "admin"
+}
+```
+
+#### Reject Request
+**Endpoint**: `POST /ai/approvals/{id}/reject`
+
+**Path Parameters**:
+- `id`: Approval ID
+
+**Request Body**:
+```json
+{
+  "rejector": "admin",
+  "reason": "Security concerns"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "id": "approval_123",
+  "status": "rejected",
+  "rejected_at": "2025-11-02T11:00:00Z",
+  "rejector": "admin",
+  "reason": "Security concerns"
+}
+```
+
+### Project Workflows
+
+#### Run Project Workflow
+**Endpoint**: `POST /ai/projects/run`
+
+**Request Body**:
+```json
+{
+  "project_name": "my_project",
+  "workflow": "planning",
+  "agents": ["research_agent", "planning_agent"]
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "project": "my_project",
+  "workflow": "planning",
+  "status": "running",
+  "task_id": "task_abc123"
+}
+```
+
+#### Get Project Status
+**Endpoint**: `GET /ai/projects/{name}/status`
+
+**Path Parameters**:
+- `name`: Project name
+
+**Response**: `200 OK`
+```json
+{
+  "project": "my_project",
+  "status": "active",
+  "phase": "execution",
+  "progress": 65,
+  "agents_assigned": 3,
+  "tasks_completed": 12,
+  "tasks_total": 18
+}
+```
+
+---
+
 ## Authentication & Authorization
 
 ### Token-Based Auth (Team Mode)
@@ -825,6 +1606,25 @@ Content-Type: application/json
       "name": "John Doe"
     }
   }
+}
+```
+
+**Register**:
+```http
+POST /auth/register
+Content-Type: application/json
+
+{
+  "username": "newuser",
+  "password": "securepassword123"
+}
+```
+
+**Response**:
+```json
+{
+  "msg": "User registered",
+  "user_id": "user_456"
 }
 ```
 

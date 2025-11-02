@@ -1,0 +1,12 @@
+{
+  "allow_agent_scrape": false,
+  "auto_approve_skills": false,
+  "default_memory_tier": "MT",
+  "log_level": "INFO",
+  "max_concurrent_agents": 10,
+  "skill_timeout": 30,
+  "research_cache_ttl": 86400,
+  "enable_audit_log": true,
+  "auto_save_research": true,
+  "pdf_generation": "auto"
+}

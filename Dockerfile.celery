@@ -1,0 +1,45 @@
+# ============================================================
+# Celery Worker Dockerfile
+# Python 3.11 + All AI Frameworks
+# ============================================================
+
+FROM python:3.11-slim
+
+# Prevent Python from writing .pyc files and buffering stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    libpq-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip, setuptools, wheel
+RUN pip install --upgrade pip setuptools wheel
+
+# Copy and install requirements
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY backend /app/backend
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/projects /app/logs
+
+# Create non-root user for security
+RUN useradd -m -u 1000 celeryuser && \
+    chown -R celeryuser:celeryuser /app
+
+USER celeryuser
+
+# Run Celery worker
+CMD ["celery", "-A", "backend.app.workers.celery_app.celery", "worker", "--loglevel=info", "--concurrency=4"]
+

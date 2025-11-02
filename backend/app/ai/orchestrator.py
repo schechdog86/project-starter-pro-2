@@ -14,6 +14,8 @@ from datetime import datetime
 from backend.app.ai.memory_system import memory_system
 from backend.app.ai.llm_service import llm_service
 from backend.app.ai.data_retrieval import DataRetrieval
+from backend.app.ai.data_formatter import DataFormatter
+from backend.app.ai.orchestrator_settings import OrchestratorSettings
 from backend.app.skills.base import BaseSkill
 from backend.app.skills.registry import SkillRegistry
 from backend.app.skills.skill_factory import SkillFactory
@@ -29,6 +31,8 @@ class Orchestrator:
         self.skill_registry = SkillRegistry()
         self.skill_factory = SkillFactory(self.skill_registry)
         self.retriever = DataRetrieval()
+        self.formatter = DataFormatter()
+        self.settings = OrchestratorSettings()
         self.loaded_agents: Dict[str, Any] = {}
         self.audit_log: List[dict] = []
 
@@ -43,23 +47,23 @@ class Orchestrator:
     def create_agent(self, name: str, config: dict, approve: bool = False) -> bool:
         """
         Create a new agent if approved or whitelisted.
-        
+
         Args:
             name: Agent name
             config: Agent configuration
             approve: Whether to auto-approve
-            
+
         Returns:
             True if created, False if pending approval
         """
         policy = config.get("policy", "user_approval")
-        
+
         if approve or policy == "auto":
             self.loaded_agents[name] = config
             self._log("agent_created", name)
             print(f"✅ Agent created: {name}")
             return True
-        
+
         self._log("agent_pending_approval", name)
         print(f"⏳ Agent pending approval: {name}")
         return False
@@ -67,11 +71,11 @@ class Orchestrator:
     def load_agent(self, name: str, cls):
         """
         Instantiate agent class if allowed.
-        
+
         Args:
             name: Agent name
             cls: Agent class
-            
+
         Returns:
             Agent instance or None
         """
@@ -79,7 +83,7 @@ class Orchestrator:
             self._log("agent_load_failed", name)
             print(f"❌ Agent load failed: {name} not registered")
             return None
-        
+
         try:
             agent = cls(self)
             self._log("agent_loaded", name)
@@ -93,7 +97,7 @@ class Orchestrator:
     def destroy_agent(self, name: str):
         """
         Destroy an agent.
-        
+
         Args:
             name: Agent name
         """
@@ -105,7 +109,7 @@ class Orchestrator:
     def list_agents(self) -> List[str]:
         """
         List all loaded agents.
-        
+
         Returns:
             List of agent names
         """
@@ -117,10 +121,10 @@ class Orchestrator:
     def load_skill(self, skill_name: str) -> Optional[BaseSkill]:
         """
         Load skill by name.
-        
+
         Args:
             skill_name: Skill name
-            
+
         Returns:
             Skill instance or None
         """
@@ -129,7 +133,7 @@ class Orchestrator:
             self._log("skill_missing", skill_name)
             print(f"❌ Skill missing: {skill_name}")
             return None
-        
+
         skill = self.skill_factory.instantiate(skill_name)
         if skill:
             self._log("skill_loaded", skill_name)
@@ -138,26 +142,26 @@ class Orchestrator:
     def ensure_skill(self, skill_name: str) -> Optional[BaseSkill]:
         """
         Ensure a skill exists; scrape if missing.
-        
+
         Args:
             skill_name: Skill name
-            
+
         Returns:
             Skill instance or None if needs approval
         """
         skill = self.load_skill(skill_name)
         if skill:
             return skill
-        
+
         # Auto-scrape to propose new skill
         try:
             from backend.app.ai import AI_REGISTRY
             scrapegraph = AI_REGISTRY.get("core", {}).get("scrapegraph")
-            
+
             if not scrapegraph:
                 print(f"❌ ScrapeGraph not available for skill generation")
                 return None
-            
+
             # Use LLM to generate skill template
             prompt = f"""Generate a skill definition for '{skill_name}' with the following JSON schema:
 {{
@@ -180,13 +184,13 @@ class Orchestrator:
 }}
 
 Also generate a basic Python implementation."""
-            
+
             response = self.llm.chat(prompt, temperature=0.3)
-            
+
             # Create skill directory
             new_skill_dir = Path(self.base_dir, "../skills", skill_name)
             new_skill_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Save config (disabled by default - needs approval)
             config = {
                 "name": skill_name,
@@ -200,16 +204,16 @@ Also generate a basic Python implementation."""
                 "permissions": [],
                 "timeout": 30
             }
-            
+
             (new_skill_dir / "config.json").write_text(json.dumps(config, indent=2))
             (new_skill_dir / "README.md").write_text(f"# {skill_name}\n\nAuto-generated skill. Review and enable in config.json.\n\n{response}")
-            
+
             self._log("skill_scraped", skill_name)
             print(f"✅ Skill template generated: {skill_name} (requires approval)")
-            
+
             # User must approve manually by setting enabled: true
             return None
-            
+
         except Exception as e:
             self._log("skill_scrape_error", {"skill": skill_name, "error": str(e)})
             print(f"❌ Skill scrape error: {skill_name} - {e}")
@@ -218,7 +222,7 @@ Also generate a basic Python implementation."""
     def add_skill(self, name: str, config: dict, code: str):
         """
         Add new skill with code + config.
-        
+
         Args:
             name: Skill name
             config: Skill configuration
@@ -226,11 +230,11 @@ Also generate a basic Python implementation."""
         """
         path = Path(self.base_dir, "../skills", name)
         path.mkdir(parents=True, exist_ok=True)
-        
+
         (path / "config.json").write_text(json.dumps(config, indent=2))
         (path / "skill.py").write_text(code)
         (path / "__init__.py").write_text("")
-        
+
         self.skill_registry.register_skill(name, config)
         self._log("skill_added", name)
         print(f"✅ Skill added: {name}")
@@ -238,7 +242,7 @@ Also generate a basic Python implementation."""
     def list_skills(self) -> List[str]:
         """
         List all available skills.
-        
+
         Returns:
             List of skill names
         """
@@ -250,13 +254,13 @@ Also generate a basic Python implementation."""
     def route_memory(self, data: dict, importance: int = 1):
         """
         Send data to proper memory tier.
-        
+
         Args:
             data: Data to store
             importance: Importance level (1=normal, 2=high, 3=critical)
         """
         text = json.dumps(data) if isinstance(data, dict) else str(data)
-        
+
         if importance >= 3:
             # Critical - store in Forever tier
             self.memory.teach(text, title=data.get("title", "Critical Memory"))
@@ -266,17 +270,17 @@ Also generate a basic Python implementation."""
         else:
             # Normal - regular insert
             self.memory.insert(text, title=data.get("title", "Memory"))
-        
+
         self._log("memory_stored", {"importance": importance})
 
     def recall_memory(self, query: str, k: int = 10) -> List[dict]:
         """
         Recall memories based on query.
-        
+
         Args:
             query: Search query
             k: Number of results
-            
+
         Returns:
             List of relevant memories
         """
@@ -285,12 +289,75 @@ Also generate a basic Python implementation."""
         return results
 
     # -------------------------
+    # -------------------------
+    # Project Context + Chat (RAG-enhanced)
+    # -------------------------
+    def get_project_context(self, name: str, query: str, k: int = 8, category: Optional[str] = None) -> List[dict]:
+        """Return a merged context from global memory and the project's RAG."""
+        ctx = self.memory.retrieve_context(query=query, k=k, project=name, category=category)
+        self._log("project_context", {"project": name, "q": query, "k": k, "cat": category, "count": len(ctx)})
+        return ctx
+
+    def _build_context_message(self, project: str, query: str, items: List[dict]) -> Dict[str, str]:
+        """Construct a single system message containing compact context.
+        Keeps it small and instructs the model to prefer provided context.
+        """
+        lines = [
+            "You are answering questions about a specific project.",
+            f"Project = {project}",
+            "Use the following retrieved context if relevant; cite by [#].",
+            f"User question: {query}",
+            "Context:"\
+        ]
+        for i, it in enumerate(items, 1):
+            src = it.get("source", "?")
+            tier = it.get("tier", "")
+            cat = it.get("category", "")
+            summary = (it.get("summary") or "").strip()
+            if len(summary) > 400:
+                summary = summary[:400] + "…"
+            lines.append(f"[{i}] ({src}/{tier}/{cat}) {summary}")
+        content = "\n".join(lines)
+        return {"role": "system", "content": content}
+
+    def chat_with_history_for_project(
+        self,
+        *,
+        project: str,
+        messages: List[Dict[str, str]],
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1000,
+        k: int = 8,
+        category: Optional[str] = None,
+    ) -> str:
+        """Answer a chat request with project-aware RAG context prepended.
+        Does not persist conversation into RAG as per product direction.
+        """
+        # Determine latest user question as the retrieval query
+        user_q = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+        context_items = self.get_project_context(project, user_q, k=k, category=category) if user_q else []
+        sys_msg = self._build_context_message(project, user_q, context_items) if context_items else None
+
+        new_messages = [sys_msg] + messages if sys_msg else list(messages)
+        reply = self.llm.chat_with_history(
+            messages=new_messages,
+            provider=provider,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        # Note: Intentionally not mirroring chat into project RAG per guidance
+        self._log("chat_project_answered", {"project": project, "len_ctx": len(context_items)})
+        return reply
+
     # Utility
     # -------------------------
     def _log(self, event: str, data: Any):
         """
         Log an event to audit log.
-        
+
         Args:
             event: Event name
             data: Event data
@@ -301,7 +368,7 @@ Also generate a basic Python implementation."""
             "data": data
         }
         self.audit_log.append(log_entry)
-        
+
         # Keep only last 1000 entries
         if len(self.audit_log) > 1000:
             self.audit_log = self.audit_log[-1000:]
@@ -309,10 +376,10 @@ Also generate a basic Python implementation."""
     def get_audit_log(self, limit: int = 100) -> List[dict]:
         """
         Get recent audit log entries.
-        
+
         Args:
             limit: Maximum number of entries
-            
+
         Returns:
             List of log entries
         """
@@ -408,6 +475,13 @@ Also generate a basic Python implementation."""
             self._log("project_error", {"name": name, "error": str(e)})
             print(f"❌ Project error: {e}")
             return {"error": str(e)}
+
+
+    def get_project_status(self, name: str) -> dict:
+        """Return current project workflow status from local project store."""
+        from backend.app.projects.doc_flow import DocumentFlow
+        df = DocumentFlow(self)
+        return df._load_project(name)
 
     # -------------------------
     # Skill Approval Methods
@@ -518,6 +592,199 @@ Return both the Python code and JSON config."""
         except Exception as e:
             self._log("skill_generation_error", {"name": name, "error": str(e)})
             print(f"❌ Skill generation error: {e}")
+            return {"error": str(e)}
+
+    # -------------------------
+    # Research Scraping
+    # -------------------------
+    def run_research_scrape(
+        self,
+        project: str,
+        topic: str,
+        urls: List[str],
+        intent: str = "general"
+    ) -> Dict[str, Any]:
+        """
+        User-approved research scrape for project reports.
+
+        This is the primary research method that:
+        1. Scrapes data from provided URLs
+        2. Normalizes and formats the data
+        3. Generates Markdown and PDF reports
+        4. Saves to project folder
+        5. Stores in memory system
+
+        Args:
+            project: Project name
+            topic: Research topic
+            urls: List of URLs to scrape
+            intent: Research intent (general, technical, business, etc.)
+
+        Returns:
+            Dictionary with markdown and pdf paths
+        """
+        try:
+            self._log("research_user_start", {
+                "project": project,
+                "topic": topic,
+                "url_count": len(urls),
+                "intent": intent
+            })
+
+            print(f"🔍 Starting research scrape: {topic}")
+            print(f"   Project: {project}")
+            print(f"   URLs: {len(urls)}")
+            print(f"   Intent: {intent}")
+
+            # Scrape data from URLs
+            data = self.retriever.search_and_cache(topic, urls)
+
+            # Normalize data
+            normalized = self.formatter.normalize(data)
+
+            # Generate Markdown
+            md_path = self.formatter.to_markdown(topic, normalized)
+
+            # Generate PDF
+            pdf_path = self.formatter.to_pdf(topic, normalized)
+
+            # Save to project folder
+            project_dir = Path("projects") / project / "research"
+            project_dir.mkdir(parents=True, exist_ok=True)
+
+            # Copy files to project folder
+            safe_topic = topic.replace(" ", "_").replace("/", "_")
+            project_md = project_dir / f"{safe_topic}.md"
+            project_pdf = project_dir / f"{safe_topic}.pdf"
+
+            # Copy Markdown
+            if Path(md_path).exists():
+                project_md.write_text(Path(md_path).read_text())
+                print(f"✅ Saved to project: {project_md}")
+
+            # Copy PDF (if it exists and is not the same as MD)
+            if Path(pdf_path).exists() and pdf_path != md_path:
+                project_pdf.write_bytes(Path(pdf_path).read_bytes())
+                print(f"✅ Saved to project: {project_pdf}")
+            else:
+                project_pdf = project_md  # Fallback to MD if PDF failed
+
+            # Store in memory system (LT_HOT tier for research)
+            memory_data = {
+                "type": "research",
+                "topic": topic,
+                "project": project,
+                "intent": intent,
+                "files": [str(project_md), str(project_pdf)],
+                "url_count": len(urls),
+                "successful_scrapes": normalized["metadata"]["successful_scrapes"],
+                "failed_scrapes": normalized["metadata"]["failed_scrapes"]
+            }
+
+            self.memory.teach(
+                f"Research on {topic} for project {project}: {len(urls)} sources analyzed, "
+                f"{normalized['metadata']['successful_scrapes']} successful",
+                title=f"Research: {topic}"
+            )
+
+            self._log("research_user_done", {
+                "topic": topic,
+                "project": project,
+                "markdown": str(project_md),
+                "pdf": str(project_pdf)
+            })
+
+            print(f"✅ Research complete: {topic}")
+
+            return {
+                "markdown": str(project_md),
+                "pdf": str(project_pdf),
+                "metadata": normalized["metadata"]
+            }
+
+        except Exception as e:
+            self._log("research_user_error", {
+                "project": project,
+                "topic": topic,
+                "error": str(e)
+            })
+            print(f"❌ Research scrape error: {e}")
+            return {"error": str(e)}
+
+    def agent_scrape(
+        self,
+        agent_name: str,
+        query: str,
+        urls: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Background agent scrape - only allowed if settings permit.
+
+        This is for autonomous agent data gathering and requires
+        explicit user permission via settings.
+
+        Args:
+            agent_name: Name of the agent requesting scrape
+            query: Search query
+            urls: List of URLs to scrape
+
+        Returns:
+            Dictionary with file path, or None if not allowed
+        """
+        # Check if agent scraping is allowed
+        if not self.settings.get("allow_agent_scrape", False):
+            self._log("agent_scrape_blocked", {
+                "agent": agent_name,
+                "query": query,
+                "reason": "Agent scraping disabled in settings"
+            })
+            print(f"⚠️  Agent scrape blocked: {agent_name} (disabled in settings)")
+            return None
+
+        try:
+            self._log("agent_scrape_start", {
+                "agent": agent_name,
+                "query": query,
+                "url_count": len(urls)
+            })
+
+            print(f"🤖 Agent scrape: {agent_name}")
+            print(f"   Query: {query}")
+            print(f"   URLs: {len(urls)}")
+
+            # Scrape data
+            data = self.retriever.search_and_cache(query, urls)
+
+            # Save to agent-specific folder
+            agent_dir = Path("data/agents") / agent_name / "scrapes"
+            agent_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate filename
+            safe_query = query.replace(" ", "_").replace("/", "_")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{safe_query}_{timestamp}.json"
+            filepath = agent_dir / filename
+
+            # Save data
+            filepath.write_text(json.dumps(data, indent=2))
+
+            self._log("agent_scrape_done", {
+                "agent": agent_name,
+                "query": query,
+                "file": str(filepath)
+            })
+
+            print(f"✅ Agent scrape complete: {filepath}")
+
+            return {"file": str(filepath), "data": data}
+
+        except Exception as e:
+            self._log("agent_scrape_error", {
+                "agent": agent_name,
+                "query": query,
+                "error": str(e)
+            })
+            print(f"❌ Agent scrape error: {e}")
             return {"error": str(e)}
 
 

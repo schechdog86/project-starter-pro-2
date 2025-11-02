@@ -1,0 +1,57 @@
+appId: com.schechter.psp2
+productName: Project Starter Pro 2
+copyright: Copyright © 2025 Schechter Customs LLC
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - main.js
+  - preload.js
+  - react-ui/dist/**
+  - package.json
+  - "!react-ui/node_modules"
+  - "!react-ui/src"
+  - "!react-ui/public"
+
+asar: true
+
+extraResources:
+  - from: ../docker-compose.yml
+    to: docker-compose.yml
+  - from: ../backend
+    to: backend
+    filter:
+      - "**/*"
+      - "!**/__pycache__"
+      - "!**/*.pyc"
+      - "!**/.pytest_cache"
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  icon: build/icon.icns
+
+win:
+  target:
+    - nsis
+    - portable
+  icon: build/icon.ico
+
+linux:
+  target:
+    - AppImage
+    - deb
+    - rpm
+  category: Development
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+

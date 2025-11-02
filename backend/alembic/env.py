@@ -19,8 +19,8 @@ from backend.app.core.config import settings
 # this is the Alembic Config object
 config = context.config
 
-# Override sqlalchemy.url with settings
-config.set_main_option("sqlalchemy.url", settings.POSTGRES_URL)
+# Override sqlalchemy.url with settings-provided URL
+config.set_main_option("sqlalchemy.url", settings.SQLALCHEMY_DATABASE_URL)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:

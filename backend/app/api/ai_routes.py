@@ -4,14 +4,18 @@ AI API Routes
 Endpoints for AI and multi-agent functionality.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+from pathlib import Path
+from backend.app.core.config import settings
 from backend.app.ai import AI_REGISTRY
 from backend.app.ai.llm_service import llm_service
 from backend.app.ai.memory_system import memory_system
 from backend.app.ai.orchestrator import orchestrator
 from backend.app.skills.approval import approval_manager
+from backend.app.ai.memory_adapter import UnifiedMemoryAdapter
+
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -38,6 +42,10 @@ class ChatHistoryRequest(BaseModel):
     model: Optional[str] = None
     temperature: float = 0.7
     max_tokens: int = 1000
+    # Project-aware RAG options
+    project: Optional[str] = None
+    category: Optional[str] = None
+    context_k: int = 8
 
 
 class FrameworkStatusResponse(BaseModel):
@@ -57,13 +65,13 @@ class AIStatusResponse(BaseModel):
 async def get_ai_status():
     """
     Get status of all AI frameworks.
-    
+
     Returns:
         Status of all loaded AI frameworks by category
     """
     categories = []
     total = 0
-    
+
     for category, frameworks in AI_REGISTRY.items():
         framework_names = list(frameworks.keys())
         categories.append(
@@ -74,7 +82,7 @@ async def get_ai_status():
             )
         )
         total += len(framework_names)
-    
+
     return AIStatusResponse(
         total_frameworks=total,
         categories=categories
@@ -85,10 +93,10 @@ async def get_ai_status():
 async def chat(request: ChatRequest):
     """
     Chat with an LLM.
-    
+
     Args:
         request: Chat request with message and optional provider/model
-        
+
     Returns:
         LLM response
     """
@@ -100,7 +108,7 @@ async def chat(request: ChatRequest):
             temperature=request.temperature,
             max_tokens=request.max_tokens
         )
-        
+
         return ChatResponse(
             response=response,
             provider=request.provider or "openai",
@@ -114,22 +122,34 @@ async def chat(request: ChatRequest):
 async def chat_with_history(request: ChatHistoryRequest):
     """
     Chat with conversation history.
-    
+
     Args:
         request: Chat request with message history
-        
+
     Returns:
         LLM response
     """
     try:
-        response = llm_service.chat_with_history(
-            messages=request.messages,
-            provider=request.provider,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens
-        )
-        
+        if request.project:
+            response = orchestrator.chat_with_history_for_project(
+                project=request.project,
+                messages=request.messages,
+                provider=request.provider,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                k=request.context_k,
+                category=request.category,
+            )
+        else:
+            response = llm_service.chat_with_history(
+                messages=request.messages,
+                provider=request.provider,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens
+            )
+
         return ChatResponse(
             response=response,
             provider=request.provider or "openai",
@@ -143,7 +163,7 @@ async def chat_with_history(request: ChatHistoryRequest):
 async def list_frameworks():
     """
     List all available AI frameworks.
-    
+
     Returns:
         Dictionary of all loaded frameworks by category
     """
@@ -157,10 +177,10 @@ async def list_frameworks():
 async def get_frameworks_by_category(category: str):
     """
     Get frameworks in a specific category.
-    
+
     Args:
         category: Framework category (core, multi_agents, enterprise, transformers)
-        
+
     Returns:
         List of frameworks in the category
     """
@@ -169,7 +189,7 @@ async def get_frameworks_by_category(category: str):
             status_code=404,
             detail=f"Category '{category}' not found. Available: {list(AI_REGISTRY.keys())}"
         )
-    
+
     return {
         "category": category,
         "frameworks": list(AI_REGISTRY[category].keys()),
@@ -806,26 +826,23 @@ async def run_project(request: ProjectRequest):
 @router.get("/projects/{name}/status")
 async def project_status(name: str):
     """
-    Get project status.
+    Get project status from orchestrator's document flow persistence.
 
     Args:
         name: Project name
 
     Returns:
-        Project status
+        Project status (phase, next_required_doc, docs_status, updated_at)
     """
     try:
-        # For now, return basic status
-        # In full implementation, this would load from project_fs
-        return {
-            "project": {
-                "name": name,
-                "phase": "planning",
-                "status": "active"
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+        status = orchestrator.get_project_status(name)
+        if not status:
+            raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+        return {"project": status}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to load project status")
 
 
 # === Research & Data Retrieval Endpoints ===
@@ -846,4 +863,303 @@ async def research_retrieve(request: ResearchRequest):
         return {"ok": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Research retrieval error: {str(e)}")
+
+
+# === User Research Scrape Endpoints ===
+
+class ResearchRunRequest(BaseModel):
+    """Request model for user research scrape."""
+    project: str
+    topic: str
+    urls: List[str]
+    intent: str = "general"
+
+
+@router.post("/research/user")
+async def run_user_research(request: ResearchRunRequest):
+    """
+    Run user-approved research scrape for project reports.
+
+    This endpoint:
+    1. Scrapes data from provided URLs
+    2. Generates Markdown and PDF reports
+    3. Saves to project folder
+    4. Stores in memory system
+
+    Args:
+        request: Research run request with project, topic, urls, intent
+
+    Returns:
+        Paths to generated Markdown and PDF files
+    """
+    try:
+        result = orchestrator.run_research_scrape(
+            request.project,
+            request.topic,
+            request.urls,
+            intent=request.intent
+        )
+
+        if "error" in result:
+            raise HTTPException(status_code=500, detail=result["error"])
+
+        return {"ok": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Research scrape error: {str(e)}")
+
+
+# === Agent Scrape Endpoints ===
+
+class AgentScrapeRequest(BaseModel):
+    """Request model for agent scrape."""
+    agent_name: str
+    query: str
+    urls: List[str]
+
+
+@router.post("/agents/scrape")
+async def run_agent_scrape(request: AgentScrapeRequest):
+    """
+    Run background agent scrape (requires settings permission).
+
+    This endpoint allows agents to autonomously gather data,
+    but only if enabled in orchestrator settings.
+
+    Args:
+        request: Agent scrape request with agent_name, query, urls
+
+    Returns:
+        Path to saved data file, or error if not allowed
+    """
+    try:
+        result = orchestrator.agent_scrape(
+            request.agent_name,
+            request.query,
+            request.urls
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Agent scraping is disabled. Enable in settings: allow_agent_scrape=true"
+            )
+
+        if "error" in result:
+            raise HTTPException(status_code=500, detail=result["error"])
+
+        return {"ok": True, "result": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent scrape error: {str(e)}")
+
+
+# === Settings Endpoints ===
+
+class SettingsUpdateRequest(BaseModel):
+    """Request model for settings update."""
+    settings: Dict[str, Any]
+
+
+@router.get("/settings")
+async def get_settings():
+    """
+    Get all orchestrator settings.
+
+    Returns:
+        Current settings
+    """
+    try:
+        settings = orchestrator.settings.get_all()
+        return {"ok": True, "settings": settings}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Settings error: {str(e)}")
+
+
+@router.post("/settings")
+async def update_settings(request: SettingsUpdateRequest):
+    """
+    Update orchestrator settings.
+
+    Args:
+        request: Settings update request
+
+    Returns:
+        Updated settings
+    """
+    try:
+        success = orchestrator.settings.update(request.settings, save=True)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save settings")
+
+        return {"ok": True, "settings": orchestrator.settings.get_all()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Settings update error: {str(e)}")
+
+
+@router.post("/settings/agent-scrape")
+async def toggle_agent_scrape(enabled: bool = True):
+    """
+    Enable or disable agent scraping.
+
+    Args:
+        enabled: Whether to enable agent scraping
+
+    Returns:
+        Updated setting
+    """
+    try:
+        success = orchestrator.settings.enable_agent_scrape(enabled)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update setting")
+
+        return {
+            "ok": True,
+            "allow_agent_scrape": orchestrator.settings.is_agent_scrape_allowed()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Settings error: {str(e)}")
+
+
+# === Project RAG Endpoints ===
+
+class RagAddRequest(BaseModel):
+    content: Optional[str] = None
+    src_path: Optional[str] = None
+    filename: Optional[str] = None
+    category: str = "docs"
+
+
+class RagIngestRequest(BaseModel):
+    categories: Optional[List[str]] = None
+
+
+@router.post("/projects/{name}/rag/add")
+async def project_rag_add(name: str, request: RagAddRequest):
+    """
+    Add content or copy a file into the project's RAG store and index it.
+    - If content provided, write to docs/<category>/<filename or auto>.md and index.
+    - If src_path provided, copy from data/imports/... into project and index.
+    """
+    try:
+        rag = UnifiedMemoryAdapter(name)
+        if request.content:
+            fname = request.filename or "snippet.md"
+            dst = rag.docs_dir / request.category / fname
+            dst.write_text(request.content, encoding="utf-8")
+            rid = rag.add_text(request.content, title=fname, category=request.category, meta={"path": str(dst)})
+            return {"ok": True, "id": rid, "path": str(dst)}
+        elif request.src_path:
+            rid = rag.add_file(request.src_path, filename=request.filename, category=request.category)
+            return {"ok": True, "id": rid}
+        else:
+            raise HTTPException(status_code=400, detail="Provide either 'content' or 'src_path'")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"RAG add error: {str(e)}")
+
+
+@router.post("/projects/{name}/rag/ingest")
+async def project_rag_ingest(name: str, request: RagIngestRequest):
+    """Ingest all eligible files from the project's docs folders into its RAG DB."""
+    try:
+        rag = UnifiedMemoryAdapter(name)
+        count = rag.ingest_project_docs(categories=request.categories)
+        return {"ok": True, "ingested": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"RAG ingest error: {str(e)}")
+
+
+@router.get("/projects/{name}/rag/search")
+async def project_rag_search(name: str, q: str, k: int = 10, category: Optional[str] = None):
+    """Search the project's RAG DB."""
+    try:
+        rag = UnifiedMemoryAdapter(name)
+        results = rag.search(q, k=k, category=category)
+        return {"ok": True, "results": results, "count": len(results)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"RAG search error: {str(e)}")
+
+
+
+# === LLM Providers/Models Endpoints ===
+
+@router.get("/llm/providers")
+async def llm_providers():
+    """Return available LLM providers (filtered by configured API keys if present)."""
+    try:
+        providers = []
+        if settings.OPENAI_API_KEY:
+            providers.append("openai")
+        if settings.ANTHROPIC_API_KEY or settings.CLAUDE_API_KEY:
+            providers.append("anthropic")
+        if settings.DEEPSEEK_API_KEY:
+            providers.append("deepseek")
+        if not providers:
+            providers = ["openai", "anthropic", "deepseek"]
+        return {"providers": providers}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Providers error: {str(e)}")
+
+
+@router.get("/llm/models/{provider}")
+async def llm_models(provider: str):
+    """Return supported models for a provider (static curated list)."""
+    try:
+        p = (provider or "").lower()
+        mapping = {
+            "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+            "anthropic": ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku"],
+            "deepseek": ["deepseek-chat", "deepseek-coder"],
+        }
+        return {"provider": p, "models": mapping.get(p, ["gpt-3.5-turbo"])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Models error: {str(e)}")
+
+
+# === Project Docs Upload/List + RAG Upload ===
+
+@router.post("/projects/{name}/rag/upload")
+async def project_rag_upload(name: str, category: str = Form("docs"), file: UploadFile = File(...)):
+    """Upload a file to data/imports/{project}/{category} then index into project RAG."""
+    try:
+        rag = UnifiedMemoryAdapter(name)
+        base = Path("data/imports") / name / category
+        base.mkdir(parents=True, exist_ok=True)
+        safe_name = Path(file.filename).name
+        dst = base / safe_name
+        content = await file.read()
+        with open(dst, "wb") as f:
+            f.write(content)
+        rid = rag.add_file(str(dst), filename=safe_name, category=category)
+        return {"ok": True, "id": rid, "filename": safe_name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
+
+
+@router.get("/projects/{name}/docs/list")
+async def project_docs_list(name: str, category: str = "docs"):
+    """List files in data/projects/{project}/docs/{category}."""
+    try:
+        base = Path("data/projects") / name / "docs" / category
+        items = []
+        if base.exists() and base.is_dir():
+            for p in sorted(base.iterdir()):
+                if p.is_file():
+                    stat = p.stat()
+                    items.append({
+                        "name": p.name,
+                        "path": str(p),
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                    })
+        return {"ok": True, "items": items}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Docs list error: {str(e)}")
+
 

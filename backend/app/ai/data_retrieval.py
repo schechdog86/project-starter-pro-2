@@ -15,25 +15,52 @@ class DataRetrieval:
     def __init__(self, base_path="data/research_cache"):
         self.base = Path(base_path)
         self.base.mkdir(parents=True, exist_ok=True)
-        
+
         # Try to import optional dependencies
         self.scrapegraph = None
         self.firecrawl = None
-        
+
+        # Import settings
         try:
-            from scrapegraphai import SmartScraperGraph
-            self.scrapegraph = SmartScraperGraph
-            print("✅ ScrapeGraphAI available")
+            from backend.app.core.config import settings
+            self.settings = settings
         except ImportError:
-            print("⚠️  ScrapeGraphAI not available (optional)")
-        
+            self.settings = None
+
+        # Initialize ScrapeGraphAI
+        try:
+            from scrapegraphai.graphs import SmartScraperGraph
+
+            # Check for API key
+            api_key = ""
+            if self.settings and hasattr(self.settings, 'SCRAPEGRAPH_API_KEY'):
+                api_key = self.settings.SCRAPEGRAPH_API_KEY
+
+            if api_key:
+                self.scrapegraph = SmartScraperGraph
+                print(f"✅ ScrapeGraphAI available (API key: {api_key[:10]}...)")
+            else:
+                self.scrapegraph = SmartScraperGraph  # May work without key for some features
+                print("⚠️  ScrapeGraphAI available but no API key set")
+        except ImportError as e:
+            print(f"❌ ScrapeGraphAI import failed: {e}")
+            self.scrapegraph = None
+        except Exception as e:
+            print(f"❌ ScrapeGraphAI initialization error: {e}")
+            self.scrapegraph = None
+
+        # Initialize Firecrawl
         try:
             from firecrawl import Firecrawl
-            import os
-            api_key = os.getenv("FIRECRAWL_API_KEY", "")
+
+            # Get API key from settings
+            api_key = ""
+            if self.settings and hasattr(self.settings, 'FIRECRAWL_API_KEY'):
+                api_key = self.settings.FIRECRAWL_API_KEY
+
             if api_key:
                 self.firecrawl = Firecrawl(api_key=api_key)
-                print("✅ Firecrawl available")
+                print(f"✅ Firecrawl available (API key: {api_key[:10]}...)")
             else:
                 self.firecrawl = None
                 print("⚠️  Firecrawl API key not set (optional)")

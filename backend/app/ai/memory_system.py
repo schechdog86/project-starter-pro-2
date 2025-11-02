@@ -40,7 +40,7 @@ def sha256(s: str) -> str: return hashlib.sha256(s.encode()).hexdigest()
 def clamp(x, a, b): return a if x < a else b if x > b else x
 def l2(v): return math.sqrt(sum(x*x for x in v))
 def dot(a,b): return float(np.dot(a,b))
-def cosine(a,b): 
+def cosine(a,b):
     na, nb = l2(a), l2(b)
     return 0 if na==0 or nb==0 else dot(a,b)/(na*nb)
 
@@ -241,6 +241,87 @@ class MemorySystem:
             out.append(dict(id=rid,score=round(sc,3),tier=tier,summary=h["summary"],mpp=h["mpp"]))
             if len(out)>=k: break
         return out
+
+    def load(self) -> None:
+        """Load/reload on-disk indices and metadata for all tiers.
+        Safe no-op if already loaded.
+        """
+        for name, t in self.tiers.items():
+            try:
+                # Re-read FAISS + metadata from disk
+                t.fi._load()  # private but stable in our implementation
+            except Exception as e:
+                print(f"memory.load warn ({name}): {e}")
+
+    def retrieve_context(self, query: str, k: int = 10, project: Optional[str] = None, category: Optional[str] = None) -> List[dict]:
+        """Recall from global memory and (optionally) the per-project RAG store.
+        Returns a unified, score-normalized list of context items.
+        """
+        mem = self.recall(query, k=k)
+        rag = []
+        if project:
+            try:
+                from backend.app.ai.memory_adapter import UnifiedMemoryAdapter
+                adapter = UnifiedMemoryAdapter(project)
+                rag = adapter.search(query, k=k, category=category) or []
+            except Exception as e:
+                print(f"memory.retrieve_context: rag error: {e}")
+
+        def to_item(x: dict, source: str) -> dict:
+            rid = x.get("id") or x.get("point_id") or x.get("uuid") or sha256(json.dumps(x))[:16]
+            score = float(x.get("score", 0.0))
+            title = x.get("title") or (x.get("metadata", {}) or {}).get("title") or ""
+            summary = x.get("summary") or x.get("text") or (x.get("metadata", {}) or {}).get("text") or ""
+            tier = x.get("tier") or ""
+            cat_val = x.get("category") or (x.get("metadata", {}) or {}).get("category") or (category or "")
+            return {"id": rid, "score": score, "title": title, "summary": summary, "tier": tier, "category": cat_val, "source": source}
+
+        items = [to_item(x, "memory") for x in mem] + [to_item(x, "rag") for x in rag]
+
+        # Normalize scores within each source to [0,1] to make merging fair
+        for src in ("memory", "rag"):
+            vals = [it["score"] for it in items if it["source"] == src]
+            if len(vals) >= 2:
+                mn, mx = min(vals), max(vals)
+                rng = (mx - mn) or 1.0
+                for it in items:
+                    if it["source"] == src:
+                        it["score"] = (it["score"] - mn) / rng
+
+        items.sort(key=lambda d: d["score"], reverse=True)
+        return items[:k]
+
+    def store_interaction(self, agent_name: str, query: str, response: str, project: Optional[str] = None) -> str:
+        """Store a chat interaction in the unified memory and mirror into the
+        project's RAG (if a project is provided).
+        """
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        text = (
+            f"[interaction]\nagent={agent_name}\ntime={ts}\n\n[query]\n{query}\n\n[response]\n{response}\n"
+        )
+        sets = [f"agent:{agent_name}", "interaction"]
+        if project:
+            sets.append(f"project:{project}")
+        rid = self.insert(
+            text,
+            sets=sets,
+            meta={"type": "chat_interaction", "project": project or ""},
+            title=f"Chat with {agent_name}"
+        )
+        if project:
+            try:
+                from backend.app.ai.memory_adapter import UnifiedMemoryAdapter
+                adapter = UnifiedMemoryAdapter(project)
+                adapter.add_text(
+                    response,
+                    title=f"Chat: {agent_name}",
+                    category="docs",
+                    meta={"source": "interaction", "agent": agent_name},
+                )
+            except Exception as e:
+                print(f"memory.store_interaction: rag mirror error: {e}")
+        return rid
+
 
     def tick(self):
         st=self.tiers["st"]
