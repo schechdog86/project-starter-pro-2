@@ -6,7 +6,7 @@ Endpoints for AI and multi-agent functionality.
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pathlib import Path
 from backend.app.core.config import settings
 from backend.app.ai import AI_REGISTRY
@@ -15,6 +15,7 @@ from backend.app.ai.memory_system import memory_system
 from backend.app.ai.orchestrator import orchestrator
 from backend.app.skills.approval import approval_manager
 from backend.app.ai.memory_adapter import UnifiedMemoryAdapter
+from backend.app.ai.documentation_agent import DocumentationAgent
 
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -28,6 +29,7 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     temperature: float = 0.7
     max_tokens: int = 1000
+    agent_name: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -46,6 +48,62 @@ class ChatHistoryRequest(BaseModel):
     project: Optional[str] = None
     category: Optional[str] = None
     context_k: int = 8
+    agent_name: Optional[str] = None
+
+
+class AgentKbTextRequest(BaseModel):
+    text: str
+    title: Optional[str] = None
+    category: Optional[str] = "docs"
+
+
+class AgentToolsUpdate(BaseModel):
+    tools: List[str]
+
+
+class AgentToolExecRequest(BaseModel):
+    name: str
+    params: Dict[str, Any] = {}
+
+
+class AgentKbPathRequest(BaseModel):
+    path: str
+    title: Optional[str] = None
+    category: Optional[str] = "docs"
+
+
+class LibraryIngestUrlRequest(BaseModel):
+    url: str
+    category: Optional[str] = "docs"
+    title: Optional[str] = None
+    save_readable: bool = True
+    format: Literal["md", "txt"] = "md"
+
+
+class LibraryCrawlerRequest(BaseModel):
+    url: Optional[str] = None
+    urls: Optional[List[str]] = None
+    category: Optional[str] = "docs"
+    use_firecrawl: Optional[bool] = True
+    save_readable: bool = True
+    format: Literal["md", "txt"] = "md"
+
+
+class LibraryTextRequest(BaseModel):
+    text: str
+    title: Optional[str] = None
+    category: Optional[str] = "docs"
+    meta: Optional[Dict[str, Any]] = None
+
+
+class LibraryPathRequest(BaseModel):
+    path: str
+    title: Optional[str] = None
+    category: Optional[str] = "docs"
+
+
+class AgentLibrariesUpdate(BaseModel):
+    libraries: List[str]
 
 
 class FrameworkStatusResponse(BaseModel):
@@ -92,22 +150,48 @@ async def get_ai_status():
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """
-    Chat with an LLM.
+    Chat with an LLM (optionally with a BMAD persona if agent_name is provided).
 
     Args:
-        request: Chat request with message and optional provider/model
+        request: Chat request with message and optional provider/model/agent_name
 
     Returns:
         LLM response
     """
     try:
-        response = llm_service.chat(
-            message=request.message,
-            provider=request.provider,
-            model=request.model,
-            temperature=request.temperature,
-            max_tokens=request.max_tokens
-        )
+        if request.agent_name:
+            # Build persona system message and use chat_with_history for injection
+            cfg = orchestrator.loaded_agents.get(request.agent_name) or \
+                  getattr(getattr(orchestrator, "bmad", {}), "get", lambda *_: {})("agents_by_name", {}).get(request.agent_name)
+            if cfg:
+                system_content = orchestrator.build_persona_system_prompt(cfg)
+                messages = [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": request.message},
+                ]
+                response = llm_service.chat_with_history(
+                    messages=messages,
+                    provider=request.provider,
+                    model=request.model,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens,
+                )
+            else:
+                response = llm_service.chat(
+                    message=request.message,
+                    provider=request.provider,
+                    model=request.model,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens,
+                )
+        else:
+            response = llm_service.chat(
+                message=request.message,
+                provider=request.provider,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
 
         return ChatResponse(
             response=response,
@@ -121,7 +205,7 @@ async def chat(request: ChatRequest):
 @router.post("/chat/history", response_model=ChatResponse)
 async def chat_with_history(request: ChatHistoryRequest):
     """
-    Chat with conversation history.
+    Chat with conversation history (optionally with a BMAD persona and/or project context).
 
     Args:
         request: Chat request with message history
@@ -140,15 +224,38 @@ async def chat_with_history(request: ChatHistoryRequest):
                 max_tokens=request.max_tokens,
                 k=request.context_k,
                 category=request.category,
+                agent_name=request.agent_name,
             )
         else:
-            response = llm_service.chat_with_history(
-                messages=request.messages,
-                provider=request.provider,
-                model=request.model,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens
-            )
+            if request.agent_name:
+                cfg = orchestrator.loaded_agents.get(request.agent_name) or \
+                      getattr(getattr(orchestrator, "bmad", {}), "get", lambda *_: {})("agents_by_name", {}).get(request.agent_name)
+                if cfg:
+                    system_content = orchestrator.build_persona_system_prompt(cfg)
+                    messages = [{"role": "system", "content": system_content}] + list(request.messages)
+                    response = llm_service.chat_with_history(
+                        messages=messages,
+                        provider=request.provider,
+                        model=request.model,
+                        temperature=request.temperature,
+                        max_tokens=request.max_tokens,
+                    )
+                else:
+                    response = llm_service.chat_with_history(
+                        messages=request.messages,
+                        provider=request.provider,
+                        model=request.model,
+                        temperature=request.temperature,
+                        max_tokens=request.max_tokens,
+                    )
+            else:
+                response = llm_service.chat_with_history(
+                    messages=request.messages,
+                    provider=request.provider,
+                    model=request.model,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens
+                )
 
         return ChatResponse(
             response=response,
@@ -419,6 +526,285 @@ async def list_agents():
         "agents": orchestrator.list_agents(),
         "count": len(orchestrator.list_agents())
     }
+
+
+@router.get("/orchestrator/bmad/agents")
+async def bmad_agents():
+    """
+    List BMAD agents synchronized into the orchestrator (from bmad/_cfg manifests).
+    """
+    bmad = getattr(orchestrator, "bmad", {})
+    agents = bmad.get("agents_by_name", {}) if isinstance(bmad, dict) else {}
+    return {"agents": agents, "count": len(agents)}
+
+
+@router.get("/orchestrator/bmad/workflows")
+async def bmad_workflows():
+    """
+    List BMAD workflows metadata from bmad/_cfg/workflow-manifest.csv (if present).
+    """
+    bmad = getattr(orchestrator, "bmad", {})
+    workflows = bmad.get("workflows", []) if isinstance(bmad, dict) else []
+    return {"workflows": workflows, "count": len(workflows)}
+
+
+@router.post("/orchestrator/bmad/agents/{agent_name}/kb/text")
+async def agent_kb_add_text(agent_name: str, request: AgentKbTextRequest):
+    """Add raw text into an agent-specific knowledge base (specialized RAG)."""
+    try:
+        adapter = UnifiedMemoryAdapter(f"agent_{agent_name}")
+        rid = adapter.add_text(
+            request.text,
+            title=request.title or "",
+            category=request.category or "docs",
+            meta={"agent": agent_name, "category": request.category or "docs"}
+        )
+        return {"id": rid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent KB ingest failed: {e}")
+
+
+@router.get("/orchestrator/bmad/agents/{agent_name}/kb/search")
+async def agent_kb_search(agent_name: str, q: str, k: int = 8, category: Optional[str] = None):
+    """Search the agent-specific knowledge base."""
+    try:
+        adapter = UnifiedMemoryAdapter(f"agent_{agent_name}")
+        results = adapter.search(q, k=k, category=category) or []
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent KB search failed: {e}")
+
+
+@router.post("/library/{library_name}/ingest/url")
+async def library_ingest_url(library_name: str, request: LibraryIngestUrlRequest):
+    """Ingest a single URL into a shared library using the doc_scraper skill."""
+    try:
+        params: Dict[str, Any] = {
+            "url": request.url,
+            "library_name": library_name,
+            "category": request.category or "docs",
+            "title": request.title,
+            "save_readable": request.save_readable,
+            "format": request.format,
+        }
+        result = orchestrator.execute_skill("doc_scraper", params)
+        if isinstance(result, dict) and result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Library URL ingest failed: {e}")
+
+
+@router.post("/library/{library_name}/ingest/crawler")
+async def library_ingest_crawler(library_name: str, request: LibraryCrawlerRequest):
+    """Batch ingest URLs (or crawl) into a shared library using doc_crawler."""
+    if not request.url and not request.urls:
+        raise HTTPException(status_code=400, detail="Provide url or urls")
+    try:
+        params: Dict[str, Any] = {
+            "library_name": library_name,
+            "category": request.category or "docs",
+            "use_firecrawl": request.use_firecrawl,
+            "save_readable": request.save_readable,
+            "format": request.format,
+        }
+        if request.url:
+            params["url"] = request.url
+        if request.urls:
+            params["urls"] = request.urls
+        result = orchestrator.execute_skill("doc_crawler", params)
+        if isinstance(result, dict) and result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Library crawl ingest failed: {e}")
+
+
+@router.post("/library/{library_name}/kb/text")
+async def library_kb_add_text(library_name: str, request: LibraryTextRequest):
+    """Add raw text to a library KB."""
+    try:
+        result = orchestrator.ingest_library_text(
+            library_name,
+            request.text,
+            title=request.title,
+            category=request.category or "docs",
+            meta=request.meta or {},
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Library text ingest failed: {e}")
+
+
+@router.post("/library/{library_name}/kb/path")
+async def library_kb_add_path(library_name: str, request: LibraryPathRequest):
+    """Ingest a local file into a library KB."""
+    try:
+        result = orchestrator.ingest_library_file(
+            library_name,
+            request.path,
+            category=request.category or "docs",
+            title=request.title,
+        )
+        return result
+    except FileNotFoundError as fe:
+        raise HTTPException(status_code=404, detail=str(fe))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Library path ingest failed: {e}")
+
+
+@router.get("/library/{library_name}/files")
+async def library_files(library_name: str, category: Optional[str] = None):
+    """List user-readable files stored for a library."""
+    try:
+        files = orchestrator.list_library_files(library_name, category=category)
+        return {"library": library_name, "files": files, "count": len(files)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list library files: {e}")
+
+
+@router.get("/library/{library_name}/file")
+async def library_file_get(library_name: str, rel_path: str):
+    """Return a saved readable file from a library."""
+    try:
+        result = orchestrator.read_library_file(library_name, rel_path)
+        return result
+    except FileNotFoundError as fe:
+        raise HTTPException(status_code=404, detail=str(fe))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read library file: {e}")
+
+
+@router.get("/library/{library_name}/search")
+async def library_search(library_name: str, q: str, k: int = 8, category: Optional[str] = None):
+    """Search a shared documentation library."""
+    try:
+        results = orchestrator.search_library(library_name, q, k=k, category=category)
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Library search failed: {e}")
+
+
+@router.get("/orchestrator/bmad/agents/{agent_name}/tools")
+async def agent_tools_get(agent_name: str):
+    """Get the allowed tools for an agent."""
+    try:
+        tools = orchestrator.get_agent_tools(agent_name)
+        return {"agent": agent_name, "tools": tools, "count": len(tools)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get agent tools: {e}")
+
+@router.post("/orchestrator/bmad/agents/{agent_name}/kb/path")
+async def agent_kb_add_path(agent_name: str, request: AgentKbPathRequest):
+    """Ingest a local text file into an agent-specific knowledge base."""
+    try:
+        result = orchestrator.ingest_agent_file(agent_name, request.path, category=request.category or "docs", title=request.title)
+        return result
+    except FileNotFoundError as fe:
+        raise HTTPException(status_code=404, detail=str(fe))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent KB path ingest failed: {e}")
+
+
+@router.get("/orchestrator/bmad/agents/{agent_name}/kb/file")
+async def agent_kb_get_file(agent_name: str, rel_path: str):
+    """Return the user-readable saved file content for a scraped document.
+    rel_path must be relative to data/projects/agent_{agent_name}/docs.
+    """
+    try:
+        base = Path("data/projects") / f"agent_{agent_name}" / "docs"
+        target = (base / rel_path).resolve()
+        if not str(target).startswith(str(base.resolve())):
+            raise HTTPException(status_code=400, detail="Invalid path")
+        if not target.exists() or not target.is_file():
+            raise HTTPException(status_code=404, detail="File not found")
+        content = target.read_text(encoding="utf-8", errors="ignore")
+        return {"agent": agent_name, "path": str(target.relative_to(base)), "content": content}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {e}")
+
+
+@router.get("/orchestrator/bmad/agents/{agent_name}/libraries")
+async def agent_libraries_get(agent_name: str):
+    """Return libraries linked to an agent."""
+    try:
+        libs = orchestrator.get_agent_libraries(agent_name)
+        return {"agent": agent_name, "libraries": libs, "count": len(libs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get agent libraries: {e}")
+
+
+@router.post("/orchestrator/bmad/agents/{agent_name}/libraries")
+async def agent_libraries_set(agent_name: str, request: AgentLibrariesUpdate):
+    """Assign shared libraries to an agent."""
+    try:
+        libs = orchestrator.set_agent_libraries(agent_name, request.libraries)
+        return {"agent": agent_name, "libraries": libs, "count": len(libs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to set agent libraries: {e}")
+
+@router.post("/orchestrator/bmad/agents/{agent_name}/tools")
+async def agent_tools_set(agent_name: str, request: AgentToolsUpdate):
+    """Set the allowed tools for an agent (validated against registry)."""
+    try:
+        updated = orchestrator.set_agent_tools(agent_name, request.tools)
+        return {"agent": agent_name, "tools": updated, "count": len(updated)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to set agent tools: {e}")
+
+
+@router.post("/orchestrator/bmad/agents/{agent_name}/tools/execute")
+async def agent_tool_execute(agent_name: str, request: AgentToolExecRequest):
+    """Execute a tool on behalf of an agent, enforcing the agent's allowlist."""
+    try:
+        result = orchestrator.execute_skill_for_agent(agent_name, request.name, request.params or {})
+        return {"result": result}
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Tool execution failed: {e}")
+
+@router.post("/orchestrator/bmad/team/load")
+async def bmad_team_load(bundle_name: Optional[str] = None, bundle_text: Optional[str] = None):
+    """Load a team bundle by name (from bmad/teams) or from provided text."""
+    try:
+        from backend.app.ai.team_bundle_loader import load_team_bundle
+        result = load_team_bundle(orchestrator, bundle_name=bundle_name, bundle_text=bundle_text)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Team load failed: {e}")
+
+
+@router.post("/orchestrator/bmad/workflows/{name}/run")
+async def bmad_workflow_run(name: str, context: Optional[Dict[str, Any]] = None):
+    """Run a minimal BMAD-style workflow by name."""
+    try:
+        from backend.app.ai.workflow_runner import MinimalWorkflowRunner
+        runner = MinimalWorkflowRunner(orchestrator)
+        result = runner.run(name, context or {})
+        if result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Workflow run failed: {e}")
+
+
 
 
 @router.post("/orchestrator/agents")
@@ -1163,3 +1549,103 @@ async def project_docs_list(name: str, category: str = "docs"):
         raise HTTPException(status_code=500, detail=f"Docs list error: {str(e)}")
 
 
+# === Documentation Agent Endpoints ===
+
+class DocAgentIngestRequest(BaseModel):
+    library: Optional[str] = None
+    force: bool = False
+
+
+class DocAgentSearchRequest(BaseModel):
+    query: str
+    library: Optional[str] = None
+    k: int = 5
+    category: Optional[str] = None
+
+
+# Initialize Documentation Agent (singleton)
+_doc_agent = None
+
+def get_doc_agent() -> DocumentationAgent:
+    """Get or create Documentation Agent instance."""
+    global _doc_agent
+    if _doc_agent is None:
+        _doc_agent = DocumentationAgent(backend="weaviate")
+    return _doc_agent
+
+
+@router.get("/documentation/status")
+async def documentation_status():
+    """Get Documentation Agent status and ingestion metrics."""
+    try:
+        agent = get_doc_agent()
+        status = agent.get_status()
+        new_docs = agent.check_new_documents()
+
+        return {
+            "ok": True,
+            "status": status,
+            "new_documents": new_docs,
+            "has_new_documents": len(new_docs) > 0
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Documentation status error: {str(e)}")
+
+
+@router.post("/documentation/ingest")
+async def documentation_ingest(request: DocAgentIngestRequest):
+    """
+    Ingest scraped documentation into RAG system.
+
+    - If library specified: Ingest that library only
+    - If library is None: Ingest all libraries
+    - force=True: Re-ingest even if already processed
+    """
+    try:
+        agent = get_doc_agent()
+
+        if request.library:
+            result = agent.ingest_library(request.library, force=request.force)
+        else:
+            result = agent.ingest_all(force=request.force)
+
+        return {"ok": True, "result": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Documentation ingest error: {str(e)}")
+
+
+@router.post("/documentation/ingest/auto")
+async def documentation_auto_ingest():
+    """Automatically ingest new documents that haven't been processed yet."""
+    try:
+        agent = get_doc_agent()
+        result = agent.auto_ingest_new()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Auto-ingest error: {str(e)}")
+
+
+@router.post("/documentation/search")
+async def documentation_search(request: DocAgentSearchRequest):
+    """
+    Search across ingested documentation.
+
+    - library: Optional library filter (ai_frameworks, business_resources, technical_resources)
+    - k: Number of results to return
+    - category: Optional category filter
+    """
+    try:
+        agent = get_doc_agent()
+        results = agent.search(
+            query=request.query,
+            library=request.library,
+            k=request.k,
+            category=request.category
+        )
+        return {"ok": True, "results": results, "count": len(results)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Documentation search error: {str(e)}")
