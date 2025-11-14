@@ -19,11 +19,11 @@ logger.setLevel(logging.INFO)
 
 
 def try_import(package):
-    """Safely import a module, return None if not installed."""
+    """Safely import a module, return None if not installed or has import errors."""
     try:
         return importlib.import_module(package)
-    except ImportError:
-        logger.info(f"[❌] {package} not installed, skipping.")
+    except (ImportError, Exception) as e:
+        logger.info(f"[❌] {package} not available: {str(e)[:100]}")
         return None
 
 
